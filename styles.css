@@ -724,6 +724,17 @@ body.media-layout {
     "side map media"
     "side table media";
 }
+/* Fieldwork: collapse right media column, expand map + attrs */
+body.media-layout.hide-media {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side map"
+    "side table";
+}
+body.media-layout.hide-media .media-panel {
+  display: none !important;
+}
 body.media-layout.table-collapsed {
   /* Keep room for selected-tree attributes; only hide full catalog */
   grid-template-rows: 56px 1.35fr minmax(160px, 0.65fr);
@@ -785,9 +796,25 @@ body.media-layout.table-collapsed .feature-attrs {
 .feature-attr-table td.editable {
   cursor: text;
   border-radius: 6px;
+  min-height: 36px;
+  padding: 8px 10px;
+  touch-action: manipulation;
+}
+.feature-attr-table td.editable:active,
+.feature-attr-table td.editable:focus-visible {
+  background: rgba(91, 140, 255, 0.12);
+  outline: 1px solid rgba(91, 140, 255, 0.45);
 }
 .feature-attr-table td.editable:hover,
-.feature-metric-value.editable:hover {
+.feature-metric-value.editable {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  touch-action: manipulation;
+}
+.feature-metric-value.editable:hover,
+.feature-metric-value.editable:active,
+.feature-metric-value.editable:focus-visible {
   background: rgba(91, 140, 255, 0.12);
 }
 .feature-attr-table td.editable.empty,
@@ -1116,6 +1143,16 @@ body.media-layout.table-collapsed .feature-attrs {
       "map media"
       "table media";
   }
+  body.media-layout.hide-media {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "map"
+      "table";
+  }
+  body.media-layout.hide-media .media-panel {
+    display: none !important;
+  }
   body.media-layout.table-collapsed {
     grid-template-rows: auto 1.35fr minmax(140px, 0.65fr);
   }
@@ -1162,6 +1199,16 @@ body.media-layout.table-collapsed .feature-attrs {
       "table"
       "media";
   }
+  body.media-layout.hide-media {
+    grid-template-rows: auto 1fr minmax(200px, 40vh);
+    grid-template-areas:
+      "top"
+      "map"
+      "table";
+  }
+  body.media-layout.hide-media .media-panel {
+    display: none !important;
+  }
   body.media-layout .media-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
@@ -1180,18 +1227,20 @@ body:not(.media-layout) .feature-attrs { display: none; }
   margin-left: 6px;
 }
 .tree-list {
-  max-height: 220px;
+  max-height: 280px;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   padding-right: 2px;
   -webkit-overflow-scrolling: touch;
 }
-.tree-list-item {
+.tree-list-item,
+.tree-list-main {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
@@ -1201,20 +1250,37 @@ body:not(.media-layout) .feature-attrs { display: none; }
   padding: 8px 10px;
   cursor: pointer;
   font: inherit;
-  min-height: 40px;
+  min-height: 52px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.tree-list-item:hover {
+.tree-list-item:hover,
+.tree-list-item:active,
+.tree-list-main:hover,
+.tree-list-main:active {
   border-color: rgba(91, 140, 255, 0.55);
   background: #243056;
 }
-.tree-list-item.on {
+.tree-list-item.on,
+.tree-list-main.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
   background: rgba(91, 140, 255, 0.14);
 }
-.tree-list-item strong {
+.tree-list-line1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.tree-list-id {
   font-size: 13px;
-  min-width: 2.5em;
+  font-weight: 700;
+  min-width: 2.8em;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
 }
 .tree-list-sp {
   flex: 1;
@@ -1224,10 +1290,99 @@ body:not(.media-layout) .feature-attrs { display: none; }
   white-space: nowrap;
   font-size: 12px;
   color: var(--muted);
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
 }
 .tree-list-pin {
   font-size: 11px;
   opacity: 0.85;
+}
+.tree-list-metrics {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tree-list-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid transparent;
+}
+.tree-list-metric abbr {
+  font-size: 10px;
+  font-weight: 700;
+  color: #93c5fd;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+.tree-list-field {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px dashed transparent;
+  touch-action: manipulation;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+}
+.tree-list-field.empty {
+  color: #64748b;
+  font-style: italic;
+}
+.tree-list-field:active,
+.tree-list-field:focus-visible {
+  border-color: rgba(91, 140, 255, 0.65);
+  background: rgba(91, 140, 255, 0.12);
+}
+.tree-list-field.editing {
+  padding: 0;
+  border-style: solid;
+  border-color: var(--accent);
+}
+.tree-list-input {
+  width: 100%;
+  min-width: 48px;
+  min-height: 32px;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: #0b1220;
+  color: var(--text);
+}
+.map-restore-hint {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fde68a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.map-restore-hint[hidden] { display: none !important; }
+.map-restore-btn {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+  font-size: 11px;
+  padding: 6px 10px;
+  min-height: 36px;
+}
+.map-restore-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 40px;
 }
 
 .map-ref-panel {
@@ -1427,22 +1582,32 @@ body.annotate-mode.has-map-ref #map {
   transform: translate(-50%, -50%);
   border: 0;
   background: transparent;
-  padding: 0;
+  /* Generous hit area for Apple Pencil / finger */
+  padding: 12px;
+  margin: -12px;
+  min-width: 44px;
+  min-height: 44px;
   cursor: pointer;
   z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .annot-marker-dot {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #f59e0b;
   border: 2px solid #fef3c7;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.annot-marker:active .annot-marker-dot {
+  transform: scale(1.15);
 }
 .annot-marker-label {
   font-size: 11px;
@@ -1551,17 +1716,18 @@ body.has-map-ref .annot-float-bar {
 .tree-list-row {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: 6px;
 }
-.tree-list-row.on .tree-list-item {
+.tree-list-row.on .tree-list-item,
+.tree-list-row.on .tree-list-main {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
   background: rgba(91, 140, 255, 0.14);
 }
-.tree-list-row .tree-list-item {
+.tree-list-row .tree-list-item,
+.tree-list-row .tree-list-main {
   flex: 1;
   min-width: 0;
-  flex-wrap: wrap;
 }
 .tree-list-xy {
   font-size: 11px;
@@ -1571,16 +1737,19 @@ body.has-map-ref .annot-float-bar {
 }
 .tree-list-del {
   flex: 0 0 auto;
-  width: 36px;
+  width: 44px;
+  min-height: 52px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: #fca5a5;
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 16px;
+  touch-action: manipulation;
 }
-.tree-list-del:hover {
+.tree-list-del:hover,
+.tree-list-del:active {
   background: rgba(239, 68, 68, 0.18);
   border-color: rgba(239, 68, 68, 0.55);
 }
@@ -1657,4 +1826,16 @@ body.has-map-ref .annot-float-bar {
     height: 40px;
     font-size: 18px;
   }
+}
+
+
+/* Hide-media toggle: keep reachable on iPad topbar */
+#btn-toggle-media {
+  white-space: nowrap;
+  min-height: 40px;
+  touch-action: manipulation;
+}
+body.hide-media #btn-toggle-media {
+  background: rgba(91, 140, 255, 0.22);
+  border-color: rgba(91, 140, 255, 0.55);
 }

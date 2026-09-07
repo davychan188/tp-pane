@@ -2856,7 +2856,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=57").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=58").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

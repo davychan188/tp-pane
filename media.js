@@ -516,18 +516,29 @@
       startAttrEdit(el);
     });
     let lastTap = { el: null, t: 0 };
-    box.addEventListener("touchend", (e) => {
-      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
-      if (!el || !box.contains(el)) return;
+    function onDoubleIntent(e, el) {
       const now = Date.now();
       if (lastTap.el === el && now - lastTap.t < 450) {
         lastTap = { el: null, t: 0 };
         e.preventDefault();
         startAttrEdit(el);
-        return;
+        return true;
       }
       lastTap = { el: el, t: now };
+      return false;
+    }
+    box.addEventListener("touchend", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+      if (!el || !box.contains(el)) return;
+      onDoubleIntent(e, el);
     }, { passive: false });
+    // Apple Pencil / pen / finger via Pointer Events (not hover-dependent)
+    box.addEventListener("pointerup", (e) => {
+      if (e.pointerType === "mouse") return; // dblclick handles mouse
+      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+      if (!el || !box.contains(el)) return;
+      onDoubleIntent(e, el);
+    });
   }
 
   function escapeHtml(s) {

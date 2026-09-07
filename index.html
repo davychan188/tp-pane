@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=57" />
-  <link rel="stylesheet" href="styles.css?v=57" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=58" />
+  <link rel="stylesheet" href="styles.css?v=58" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -46,6 +46,7 @@
       <button class="btn" id="btn-media-demo" type="button" title="Load demo photos/PDF">示範媒體</button>
       <button class="btn" id="btn-demo-trees" type="button" title="Place demo trees without GPKG">示範樹木</button>
       <button class="btn" id="btn-fit" type="button">Fit</button>
+      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="Hide photo panel">隱藏相片</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
       <button class="btn" id="btn-export-xlsx" type="button">匯出目錄</button>
       <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
@@ -174,7 +175,7 @@
 
     <div class="settings-card tree-list-panel" id="tree-list-panel" hidden>
       <div class="card-title">樹木清單 Tree list <span class="tag" id="tree-list-count"></span></div>
-      <div class="hint" style="margin:0 0 6px">無座標／無相片亦可由此選樹。加樹模式會顯示 x／y（%）。</div>
+      <div class="hint" style="margin:0 0 6px">無座標／無相片亦可由此選樹。雙擊欄位可編輯 ID／DBH／H／S／樹種。加樹模式顯示 x／y（%）。自動儲存至本機。</div>
       <div class="tree-list" id="tree-list" role="listbox" aria-label="樹木清單"></div>
     </div>
 
@@ -315,11 +316,11 @@
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=57"></script>
-  <script src="vendor/geopackage.min.js?v=57"></script>
-  <script src="vendor/xlsx.full.min.js?v=57"></script>
-  <script src="media.js?v=57"></script>
-  <script src="import-extras.js?v=57"></script>
-  <script src="app.js?v=57"></script>
+  <script src="vendor/leaflet.js?v=58"></script>
+  <script src="vendor/geopackage.min.js?v=58"></script>
+  <script src="vendor/xlsx.full.min.js?v=58"></script>
+  <script src="media.js?v=58"></script>
+  <script src="import-extras.js?v=58"></script>
+  <script src="app.js?v=58"></script>
 </body>
 </html>
