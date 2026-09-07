@@ -402,7 +402,7 @@
     if (!box) return;
     if (!props) {
       state.selectedProps = null;
-      box.innerHTML = '<p class="empty-hint">點選地圖／清單上的樹木以顯示屬性。雙擊欄位可編輯。</p>';
+      box.innerHTML = '<p class="empty-hint">點選地圖／清單上的樹木以顯示屬性。點一下欄位可編輯。</p>';
       return;
     }
     ensureCanonicalMetrics(props);
@@ -410,7 +410,7 @@
 
     const primaryKey = PRIMARY_KEYS.find((k) => Object.prototype.hasOwnProperty.call(props, k));
     let html = "";
-    html += '<p class="feature-attrs-edit-hint">雙擊數值可編輯 · edits update export</p>';
+    html += '<p class="feature-attrs-edit-hint">點一下數值可編輯 · edits update export</p>';
     if (primaryKey) {
       html += '<table class="feature-attr-table"><tbody>';
       html += "<tr><th>" + escapeHtml(primaryKey) + "</th>" + attrCellHtml(primaryKey, props[primaryKey]) + "</tr>";
@@ -423,7 +423,7 @@
       const v = props[def.key];
       const empty = (v == null || v === "");
       html += '<div class="feature-metric' + (empty ? " empty" : "") + '" data-attr-key="' + escapeHtml(def.key) +
-        '" title="' + escapeHtml(def.tip) + ' · 雙擊編輯">';
+        '" title="' + escapeHtml(def.tip) + ' · 點一下編輯">';
       html += '<div class="feature-metric-label"><span class="feature-metric-abbr">' + escapeHtml(def.label) +
         '</span><span class="feature-metric-sub">' + escapeHtml(def.tip) + "</span></div>";
       html += '<div class="feature-metric-value editable' + (empty ? " empty" : "") +
@@ -509,35 +509,33 @@
   function bindFeatureAttrEdits(box) {
     if (!box || box._attrEditBound) return;
     box._attrEditBound = true;
-    box.addEventListener("dblclick", (e) => {
-      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+    let editedByPointer = 0;
+    function tryEdit(e, el) {
       if (!el || !box.contains(el)) return;
+      if (el.classList.contains("editing")) return;
       e.preventDefault();
       startAttrEdit(el);
-    });
-    let lastTap = { el: null, t: 0 };
-    function onDoubleIntent(e, el) {
-      const now = Date.now();
-      if (lastTap.el === el && now - lastTap.t < 450) {
-        lastTap = { el: null, t: 0 };
-        e.preventDefault();
-        startAttrEdit(el);
-        return true;
-      }
-      lastTap = { el: el, t: now };
-      return false;
     }
-    box.addEventListener("touchend", (e) => {
+    // Single tap/click on value → edit (mouse, Pencil, finger)
+    box.addEventListener("click", (e) => {
+      if (Date.now() - editedByPointer < 450) {
+        e.preventDefault();
+        return;
+      }
       const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
-      if (!el || !box.contains(el)) return;
-      onDoubleIntent(e, el);
-    }, { passive: false });
-    // Apple Pencil / pen / finger via Pointer Events (not hover-dependent)
+      tryEdit(e, el);
+    });
+    box.addEventListener("dblclick", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+      tryEdit(e, el);
+    });
     box.addEventListener("pointerup", (e) => {
-      if (e.pointerType === "mouse") return; // dblclick handles mouse
+      if (e.pointerType === "mouse") return; // click handles mouse
+      if (e.pointerType !== "pen" && e.pointerType !== "touch") return;
       const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
-      if (!el || !box.contains(el)) return;
-      onDoubleIntent(e, el);
+      if (!el || !box.contains(el) || el.classList.contains("editing")) return;
+      editedByPointer = Date.now();
+      tryEdit(e, el);
     });
   }
 

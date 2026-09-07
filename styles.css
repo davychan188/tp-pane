@@ -1595,8 +1595,25 @@ body.annotate-mode.has-map-ref #map {
   justify-content: center;
   gap: 2px;
   pointer-events: auto;
-  touch-action: manipulation;
+  touch-action: none; /* long-press drag handled in JS */
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.annot-marker.pressing .annot-marker-dot {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.45);
+}
+.annot-marker.dragging {
+  z-index: 20;
+  cursor: grabbing;
+  opacity: 0.95;
+}
+.annot-marker.dragging .annot-marker-dot {
+  transform: scale(1.35);
+  background: #3b82f6;
+  border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.55);
 }
 .annot-marker-dot {
   width: 18px;

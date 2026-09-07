@@ -396,6 +396,9 @@
     if (!box || box._listEditBound) return;
     box._listEditBound = true;
 
+    // Single tap/click on a value field → inline edit (Pencil / finger / mouse).
+    // Tap on row chrome (not a field) → select only.
+    let editedByPointer = 0;
     box.addEventListener("click", (e) => {
       const del = e.target.closest && e.target.closest(".tree-list-del");
       if (del) {
@@ -405,12 +408,16 @@
         return;
       }
       if (e.target.closest && e.target.closest(".tree-list-input")) return;
+      if (Date.now() - editedByPointer < 450) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const field = e.target.closest && e.target.closest(".tree-list-field");
       const main = e.target.closest && e.target.closest(".tree-list-main, .tree-list-item");
       if (field) {
-        // Single tap selects; editing via dblclick / double-pointer
-        const tid = field.getAttribute("data-tree-id");
-        if (tid) selectTreeFromList(tid);
+        e.preventDefault();
+        startTreeListFieldEdit(field);
         return;
       }
       if (main) {
@@ -427,21 +434,17 @@
       startTreeListFieldEdit(field);
     });
 
-    // Apple Pencil / touch: double pointerup ≈ double-tap edit
-    let lastPtr = { el: null, t: 0 };
+    // Pen / touch: open edit on pointerup (do not require double-tap)
     box.addEventListener("pointerup", (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (e.pointerType === "mouse") return; // click handles mouse
+      if (e.pointerType !== "pen" && e.pointerType !== "touch") return;
       const field = e.target.closest && e.target.closest(".tree-list-field");
       if (!field || !box.contains(field)) return;
       if (field.classList.contains("editing")) return;
-      const now = Date.now();
-      if (lastPtr.el === field && now - lastPtr.t < 450) {
-        lastPtr = { el: null, t: 0 };
-        e.preventDefault();
-        startTreeListFieldEdit(field);
-        return;
-      }
-      lastPtr = { el: field, t: now };
+      if (e.target.closest && e.target.closest(".tree-list-input")) return;
+      editedByPointer = Date.now();
+      e.preventDefault();
+      startTreeListFieldEdit(field);
     });
   }
 
@@ -780,10 +783,10 @@
         '<div class="tree-list-main' + (on ? " on" : "") + '" data-tree-id="' + tid + '" tabindex="0">' +
         '<div class="tree-list-line1">' +
         '<span class="tree-list-field tree-list-id" data-field="Tree ID" data-tree-id="' + tid +
-        '" title="雙擊編輯編號">' + tid + "</span>" +
+        '" title="點一下編輯編號">' + tid + "</span>" +
         '<span class="tree-list-field tree-list-sp' + ((sp == null || sp === "") ? " empty" : "") +
         '" data-field="Species" data-tree-id="' + tid +
-        '" title="雙擊編輯樹種">' + escapeHtml(displayListVal(sp)) + "</span>" +
+        '" title="點一下編輯樹種">' + escapeHtml(displayListVal(sp)) + "</span>" +
         xy +
         (t.hasCoords ? '<span class="tree-list-pin" title="有座標">📍</span>' : "") +
         "</div>" +
@@ -1184,8 +1187,8 @@
     if (state.annotateMode) {
       setImportStatus(
         state.idMode === "manual"
-          ? "加樹模式（手動編號）：點地圖後輸入編號"
-          : "加樹模式（自動編號）：點地圖放置 T1、T2…",
+          ? "加樹模式（手動編號）：點地圖後輸入編號；長按標記可拖移"
+          : "加樹模式（自動編號）：點地圖放置 T1、T2…；長按標記可拖移",
         "ok"
       );
     } else {
@@ -1206,8 +1209,8 @@
     if (hint) {
       if (state.annotateMode) {
         hint.textContent = state.idMode === "manual"
-          ? "手動編號：點地圖後輸入樹木 ID。座標以檢視框 % 記錄。"
-          : "自動編號：點地圖依序 T1、T2…（略過已有編號）。PNG／JPG 最佳。";
+          ? "手動編號：點地圖後輸入樹木 ID。短點標記選取；長按拖移位置。座標以檢視框 % 記錄。"
+          : "自動編號：點地圖依序 T1、T2…。短點標記選取；長按（筆／指）拖移。PNG／JPG 最佳。";
       } else {
         hint.textContent = "開啟「加樹模式」後，點地圖圖片或 Leaflet 放置樹木。PNG／JPG 地圖最合適。";
       }
@@ -1414,6 +1417,48 @@
     });
   }
 
+  function updateTreeXy(treeId, x, y) {
+    const want = String(treeId || "").toUpperCase();
+    const t = state.trees.find((x0) => String(x0.id).toUpperCase() === want);
+    if (!t) return false;
+    const nx = Math.max(0, Math.min(100, Number(x)));
+    const ny = Math.max(0, Math.min(100, Number(y)));
+    if (!isFinite(nx) || !isFinite(ny)) return false;
+    t.x = nx;
+    t.y = ny;
+    t.props = t.props || {};
+    t.props.x = Number(nx.toFixed(2));
+    t.props.y = Number(ny.toFixed(2));
+    if (t.feature) {
+      t.feature.properties = t.feature.properties || t.props;
+      t.feature.properties.x = t.props.x;
+      t.feature.properties.y = t.props.y;
+    }
+    schedulePersist();
+    // Keep overlay marker in sync (may already be at this %)
+    const layer = $("map-annotate-layer");
+    if (layer) {
+      Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
+        if (String(el.getAttribute("data-tree-id") || "").toUpperCase() !== want) return;
+        el.style.left = nx.toFixed(3) + "%";
+        el.style.top = ny.toFixed(3) + "%";
+      });
+    }
+    // Refresh list x/y; skip full re-render while a field editor is open
+    const box = $("tree-list");
+    if (box && box.querySelector(".tree-list-field.editing")) {
+      Array.prototype.forEach.call(box.querySelectorAll(".tree-list-row"), (row) => {
+        if (String(row.getAttribute("data-tree-id") || "").toUpperCase() !== want) return;
+        const xy = row.querySelector(".tree-list-xy");
+        if (xy) xy.textContent = "x " + fmtXy(nx) + "% · y " + fmtXy(ny) + "%";
+      });
+    } else {
+      renderTreeList();
+      syncTreeListHighlight();
+    }
+    return true;
+  }
+
   function deleteTree(treeId) {
     const idx = state.trees.findIndex((t) => String(t.id).toUpperCase() === String(treeId).toUpperCase());
     if (idx < 0) return;
@@ -1499,6 +1544,183 @@
     }
   }
 
+  function bindAnnotOverlayPointers(layer) {
+    if (!layer || layer._annotPtrBound) return;
+    layer._annotPtrBound = true;
+
+    const LONG_MS = 450;
+    const MOVE_CANCEL_PX = 14;
+    let gesture = null; // { pointerId, marker, treeId, startX, startY, longTimer, dragging, suppressed, startLeft, startTop }
+    let suppressClickUntil = 0;
+
+    function clearLongTimer() {
+      if (gesture && gesture.longTimer) {
+        clearTimeout(gesture.longTimer);
+        gesture.longTimer = null;
+      }
+    }
+
+    function endGesture() {
+      clearLongTimer();
+      if (gesture && gesture.marker) {
+        gesture.marker.classList.remove("pressing", "dragging");
+      }
+      gesture = null;
+    }
+
+    function pctFromClient(clientX, clientY) {
+      return pctFromEvent(layer, clientX, clientY);
+    }
+
+    function beginDrag() {
+      if (!gesture || !gesture.marker) return;
+      gesture.dragging = true;
+      gesture.marker.classList.remove("pressing");
+      gesture.marker.classList.add("dragging");
+      try { gesture.marker.setPointerCapture(gesture.pointerId); } catch (_) {}
+      selectTreeFromList(gesture.treeId);
+      setImportStatus("拖移 " + gesture.treeId + " …鬆開後儲存位置", "ok");
+    }
+
+    function applyMarkerVisual(clientX, clientY) {
+      if (!gesture || !gesture.marker) return;
+      const pct = pctFromClient(clientX, clientY);
+      if (!pct) return pct;
+      gesture.marker.style.left = pct.x.toFixed(3) + "%";
+      gesture.marker.style.top = pct.y.toFixed(3) + "%";
+      return pct;
+    }
+
+    layer.addEventListener("pointerdown", (e) => {
+      if (!state.annotateMode) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const hit = e.target && e.target.closest && e.target.closest(".annot-marker");
+      if (!hit || !layer.contains(hit)) {
+        // Empty overlay: short tap handled on pointerup / click
+        gesture = {
+          pointerId: e.pointerId,
+          marker: null,
+          treeId: null,
+          startX: e.clientX,
+          startY: e.clientY,
+          longTimer: null,
+          dragging: false,
+          suppressed: false,
+          place: true
+        };
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      const tid = hit.getAttribute("data-tree-id");
+      gesture = {
+        pointerId: e.pointerId,
+        marker: hit,
+        treeId: tid,
+        startX: e.clientX,
+        startY: e.clientY,
+        longTimer: null,
+        dragging: false,
+        suppressed: false,
+        place: false
+      };
+      hit.classList.add("pressing");
+      gesture.longTimer = setTimeout(() => {
+        if (!gesture || gesture.pointerId !== e.pointerId || gesture.suppressed) return;
+        beginDrag();
+      }, LONG_MS);
+    });
+
+    layer.addEventListener("pointermove", (e) => {
+      if (!gesture || gesture.pointerId !== e.pointerId) return;
+      const dx = e.clientX - gesture.startX;
+      const dy = e.clientY - gesture.startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (!gesture.dragging) {
+        if (dist > MOVE_CANCEL_PX) {
+          // Moved too early → treat as scroll / cancel long-press (no select on release)
+          gesture.suppressed = true;
+          clearLongTimer();
+          if (gesture.marker) gesture.marker.classList.remove("pressing");
+        }
+        return;
+      }
+      e.preventDefault();
+      applyMarkerVisual(e.clientX, e.clientY);
+    });
+
+    function finishPointer(e) {
+      if (!gesture || gesture.pointerId !== e.pointerId) return;
+      const g = gesture;
+      clearLongTimer();
+      if (g.dragging && g.marker && g.treeId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pct = applyMarkerVisual(e.clientX, e.clientY) || pctFromClient(e.clientX, e.clientY);
+        g.marker.classList.remove("dragging", "pressing");
+        try { g.marker.releasePointerCapture(g.pointerId); } catch (_) {}
+        suppressClickUntil = Date.now() + 500;
+        if (pct) {
+          updateTreeXy(g.treeId, pct.x, pct.y);
+          setImportStatus(
+            "已移動 " + g.treeId + " · x " + fmtXy(pct.x) + "% y " + fmtXy(pct.y) + "%",
+            "ok"
+          );
+        }
+        endGesture();
+        return;
+      }
+      // Short tap
+      const wasSuppressed = g.suppressed;
+      const marker = g.marker;
+      const treeId = g.treeId;
+      const place = g.place;
+      endGesture();
+      if (wasSuppressed) {
+        suppressClickUntil = Date.now() + 300;
+        return;
+      }
+      if (marker && treeId) {
+        suppressClickUntil = Date.now() + 450;
+        selectTreeFromList(treeId);
+        return;
+      }
+      if (place && state.annotateMode) {
+        // Pen/touch place on pointerup; mouse uses click below
+        if (e.pointerType === "pen" || e.pointerType === "touch") {
+          suppressClickUntil = Date.now() + 450;
+          handleOverlayClick(e);
+        }
+      }
+    }
+
+    layer.addEventListener("pointerup", finishPointer);
+    layer.addEventListener("pointercancel", (e) => {
+      if (!gesture || gesture.pointerId !== e.pointerId) return;
+      if (gesture.dragging && gesture.marker) {
+        // Revert visual to stored tree coords
+        const t = state.trees.find((x) => String(x.id).toUpperCase() === String(gesture.treeId || "").toUpperCase());
+        if (t && t.x != null && t.y != null) {
+          gesture.marker.style.left = Number(t.x).toFixed(3) + "%";
+          gesture.marker.style.top = Number(t.y).toFixed(3) + "%";
+        }
+        try { gesture.marker.releasePointerCapture(gesture.pointerId); } catch (_) {}
+      }
+      endGesture();
+      suppressClickUntil = Date.now() + 300;
+    });
+
+    layer.addEventListener("click", (e) => {
+      if (Date.now() < suppressClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      // Mouse (and synthesised click): place or select via existing handler
+      handleOverlayClick(e);
+    });
+  }
+
   function initAnnotControls() {
     function toggleMode() {
       setAnnotateMode(!state.annotateMode);
@@ -1519,23 +1741,7 @@
 
     const layer = $("map-annotate-layer");
     if (layer) {
-      // Prefer click (works with mouse + Pencil synthesised click). pointerup
-      // used only when click is suppressed (some Pencil / Safari cases).
-      let placedByPointer = 0;
-      layer.addEventListener("pointerup", (e) => {
-        if (e.pointerType === "mouse") return;
-        // Marker select / place immediately for pen/touch
-        placedByPointer = Date.now();
-        handleOverlayClick(e);
-      });
-      layer.addEventListener("click", (e) => {
-        if (Date.now() - placedByPointer < 450) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        handleOverlayClick(e);
-      });
+      bindAnnotOverlayPointers(layer);
     }
 
     const ok = $("btn-annot-id-ok");
@@ -1689,7 +1895,8 @@
     isAnnotateMode: function () { return !!state.annotateMode; },
     setAnnotateMode: setAnnotateMode,
     handleLeafletClick: handleLeafletClick,
-    exportTreeListCsv: exportTreeListCsv
+    exportTreeListCsv: exportTreeListCsv,
+    updateTreeXy: updateTreeXy
   };
 
   if (document.readyState === "loading") {
