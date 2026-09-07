@@ -435,10 +435,10 @@
   function updateFloatBarVisibility(mapRefShowing) {
     const bar = $("annot-float-bar");
     if (!bar) return;
-    // Show floating annotate bar on Leaflet when map-ref is not covering
-    const show = !mapRefShowing && (state.annotateMode || true);
-    // Always available when leaflet visible so user can turn on add-tree without map PDF
-    bar.hidden = !!mapRefShowing;
+    // Prefer sidebar + map-ref toolbar. Keep a slim bottom-left float only while
+    // annotate mode is ON and Leaflet is visible — never over the global topbar.
+    const show = !mapRefShowing && !!state.annotateMode;
+    bar.hidden = !show;
   }
 
   function hideMapRefViewers() {
@@ -646,6 +646,7 @@
     updatePdfHint();
     updateAnnotUi();
     ensureLeafletAnnotBinding();
+    updateFloatBarVisibility(document.body.classList.contains("has-map-ref"));
     if (state.annotateMode) {
       setImportStatus(
         state.idMode === "manual"

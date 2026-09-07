@@ -38,7 +38,8 @@ body {
 }
 .backdrop,
 .file-input-ios,
-.status {
+.status,
+.annot-float-bar {
   grid-area: map;
 }
 body.table-collapsed {
@@ -56,6 +57,8 @@ body.table-collapsed .table-hint {
 
 .topbar {
   grid-area: top;
+  position: relative;
+  z-index: 1200;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1124,7 +1127,8 @@ body:not(.media-layout) .feature-attrs { display: none; }
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
-  z-index: 2;
+  position: relative;
+  z-index: 10; /* above map-ref-viewer / annotate layer — keep 切換地圖 clickable */
 }
 .map-ref-toolbar #map-ref-label {
   flex: 1;
@@ -1335,21 +1339,31 @@ body.annotate-mode.has-map-ref #map {
   display: none !important;
 }
 
+/* Annotate float: map cell bottom-left — never over topbar / 媒體資料夾 / 切換地圖 */
 .annot-float-bar {
+  grid-area: map;
   position: absolute;
-  z-index: 850;
-  top: 58px;
-  left: 12px;
+  z-index: 450; /* below topbar (1200) and map-ref (800); same band as .status */
+  top: auto;
+  right: auto;
+  bottom: 12px;
+  left: 10px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
-  max-width: min(520px, calc(100% - 24px));
-  padding: 6px;
+  max-width: min(340px, calc(100% - 20px));
+  padding: 4px 6px;
   background: rgba(18, 25, 43, 0.92);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+.annot-float-bar .btn {
+  font-size: 11px;
+  padding: 5px 8px;
+  min-height: 0;
 }
 .annot-float-bar[hidden] {
   display: none !important;
