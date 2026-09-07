@@ -52,7 +52,7 @@ http://127.0.0.1:8765/?demo=1
    - 樹木編號欄寬鬆辨識：`Tree ID`、`Tree No.`、`No.`、`Tag`、`Label`、`TREE`、`Plant No`、`樹號`、`木號`、`號碼`、`編號`、`ID` 等  
    - CSV 會去掉 BOM；若仍對不到欄名，會依內容（如 `T1`／`T30`）自動用第一欄，並在狀態列說明用了哪一欄  
    - 失敗時錯誤會列出實際欄名：`找不到樹木編號欄。現有欄名：…`  
-   - 選填：Species／樹種、DBH／胸徑、Defect／缺陷、Location／位置  
+   - 選填：Species／樹種、DBH／胸徑、Height／高度、Spread／冠幅、Defect／缺陷、Location／位置  
    - 若有座標（`Latitude`/`Longitude` 或 `X`/`Y`／Easting／Northing）會在地圖上顯示標記  
    - **無座標**時左側會出現可捲動的 **樹木清單**，點選即可看屬性與媒體
 2. **匯入地圖 PDF**（或 JPG／PNG）  
@@ -74,6 +74,14 @@ http://127.0.0.1:8765/?demo=1
 | `samples/media/` | 示範相片與調查 PDF |
 | `templates/Tree Inventory Template.xlsx` | 目錄匯出範本（上游） |
 
+
+### 樹木資料面板（可編輯）
+
+- 選樹後左下 **樹木資料** 顯示屬性；**雙擊**（或快速雙點）數值可內嵌編輯，Enter／失焦儲存、Esc 取消  
+- 儲存會寫回記憶體中的樹木屬性（Excel 匯入／標註／示範／GPKG 選取），目錄表與之後匯出會反映變更  
+- 版面第二列為三格：**DBH**（胸徑）、**H**（高度）、**S**（冠幅）；缺欄時仍顯示空白可編輯  
+- Species／Defect／Location 等其餘欄位同樣可雙擊編輯  
+
 ### 從零加樹（地圖點擊標註 · Annotate）
 
 適合幾乎沒有原始清單／座標時：先匯入地圖圖片，再開「加樹模式」在圖上點出樹木。
@@ -84,7 +92,7 @@ http://127.0.0.1:8765/?demo=1
    - **自動編號 Auto**：點一下地圖 → `T1`、`T2`、`T3`…（略過已有編號）
    - **手動編號 Manual**：點一下後跳出輸入框，輸入自訂 ID 再放置
 4. 左側 **樹木清單** 顯示每棵樹的 **x／y（相對檢視框 %）**；可點選、可 ✕ 刪除；無需相片亦可
-5. **匯出列表 Export CSV**：下載 `Tree ID,x,y,Latitude,Longitude,Source`
+5. **匯出列表 Export CSV**：下載含 `Species,DBH,Height,Spread,Defect,Location` 與座標欄
 6. 之後仍可再匯入媒體資料夾，依檔名前綴配對相片
 
 技術備註：

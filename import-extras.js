@@ -23,6 +23,8 @@
 
   const SPECIES_HINTS = ["species", "scientific", "學名", "树种", "樹種", "chinese name", "中文名"];
   const DBH_HINTS = ["dbh", "diameter", "胸徑", "胸径"];
+  const HEIGHT_HINTS = ["overall height (m)", "overall height", "height_m", "height", "高度"];
+  const SPREAD_HINTS = ["crown spread (m)", "crown spread", "spread_m", "spread", "crown", "冠幅"];
   const DEFECT_HINTS = ["defect", "缺陷", "condition", "remarks", "備註", "备注"];
   const LOCATION_HINTS = ["location", "位置", "site", "address", "地點", "地点"];
   const LAT_HINTS = ["lat", "latitude", "緯度", "纬度", "y_wgs", "wgs_y", "wgs84_y"];
@@ -282,6 +284,8 @@
     }
     const speciesCol = findCol(headers, SPECIES_HINTS);
     const dbhCol = findCol(headers, DBH_HINTS);
+    const heightCol = findCol(headers, HEIGHT_HINTS);
+    const spreadCol = findCol(headers, SPREAD_HINTS);
     const defectCol = findCol(headers, DEFECT_HINTS);
     const locCol = findCol(headers, LOCATION_HINTS);
     const latCol = findCol(headers, LAT_HINTS);
@@ -308,8 +312,14 @@
       props["Tree ID"] = id;
       renameNice(props, speciesCol, "Species");
       renameNice(props, dbhCol, "DBH");
+      renameNice(props, heightCol, "Height");
+      renameNice(props, spreadCol, "Spread");
       renameNice(props, defectCol, "Defect");
       renameNice(props, locCol, "Location");
+      // Ensure metrics exist for attrs card (empty editable)
+      if (!Object.prototype.hasOwnProperty.call(props, "DBH")) props.DBH = "";
+      if (!Object.prototype.hasOwnProperty.call(props, "Height")) props.Height = "";
+      if (!Object.prototype.hasOwnProperty.call(props, "Spread")) props.Spread = "";
 
       const coord = pickCoord(row, headers, latCol, lonCol, xCol, yCol);
       let geometry = null;
@@ -715,6 +725,12 @@
     const y = place && place.y != null ? Number(place.y) : null;
     const props = {
       "Tree ID": id,
+      Species: "",
+      DBH: "",
+      Height: "",
+      Spread: "",
+      Defect: "",
+      Location: "",
       x: x != null ? Number(x.toFixed(2)) : "",
       y: y != null ? Number(y.toFixed(2)) : "",
       Source: "annotate"
@@ -892,15 +908,24 @@
       setImportStatus("清單是空的，無可匯出", "warn");
       return;
     }
-    const lines = ["Tree ID,x,y,Latitude,Longitude,Source"];
+    function csvCell(v) {
+      if (v == null) return "";
+      const s = String(v).replace(/"/g, '""');
+      return /[",\n\r]/.test(s) ? ('"' + s + '"') : s;
+    }
+    const lines = ["Tree ID,Species,DBH,Height,Spread,Defect,Location,x,y,Latitude,Longitude,Source"];
     state.trees.forEach((t) => {
-      const id = String(t.id).replace(/"/g, '""');
+      const p = t.props || {};
+      const id = String(t.id);
       const x = t.x != null ? Number(t.x).toFixed(2) : "";
       const y = t.y != null ? Number(t.y).toFixed(2) : "";
-      const lat = t.props && t.props.Latitude != null ? t.props.Latitude : "";
-      const lng = t.props && t.props.Longitude != null ? t.props.Longitude : "";
-      const src = (t.source || (t.annot ? "annotate" : "import")).replace(/"/g, '""');
-      lines.push('"' + id + '",' + x + "," + y + "," + lat + "," + lng + ',"' + src + '"');
+      const lat = p.Latitude != null ? p.Latitude : "";
+      const lng = p.Longitude != null ? p.Longitude : "";
+      const src = t.source || (t.annot ? "annotate" : "import");
+      lines.push([
+        csvCell(id), csvCell(p.Species), csvCell(p.DBH), csvCell(p.Height), csvCell(p.Spread),
+        csvCell(p.Defect), csvCell(p.Location), x, y, lat, lng, csvCell(src)
+      ].join(","));
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1066,6 +1091,23 @@
     renderTreeList();
   }
 
+  function applyTreeAttr(treeId, key, value) {
+    if (!treeId || !key) return;
+    const want = String(treeId).trim().toUpperCase();
+    state.trees.forEach((t) => {
+      if (String(t.id).trim().toUpperCase() !== want) return;
+      t.props = t.props || {};
+      t.props[key] = value;
+      if (t.feature) {
+        t.feature.properties = t.feature.properties || t.props;
+        t.feature.properties[key] = value;
+      }
+      if (t.leafletMarker && t.leafletMarker.feature && t.leafletMarker.feature.properties) {
+        t.leafletMarker.feature.properties[key] = value;
+      }
+    });
+  }
+
   window.GpkgImport = {
     importExcelFile: importExcelFile,
     showMapRef: showMapRef,
@@ -1077,6 +1119,7 @@
     updateMapRefVisibility: updateMapRefVisibility,
     getTrees: function () { return state.trees.slice(); },
     getState: function () { return state; },
+    applyTreeAttr: applyTreeAttr,
     isAnnotateMode: function () { return !!state.annotateMode; },
     setAnnotateMode: setAnnotateMode,
     handleLeafletClick: handleLeafletClick,

@@ -14,16 +14,41 @@
   };
 
   const DEMO_ATTRS = {
-    T1: { Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Defect: "_Cavity on trunk", Location: "Demo plot A" },
-    T2: { Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Defect: "None", Location: "Demo plot A" },
-    T8: { Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Defect: "Dead wood", Location: "Demo plot B" },
-    T30: { Species: "台灣相思 Acacia confusa", DBH: "55 cm", Defect: "Root plate lift", Location: "Demo plot C" }
+    T1: { Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Height: "12", Spread: "10", Defect: "_Cavity on trunk", Location: "Demo plot A" },
+    T2: { Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Height: "9", Spread: "7", Defect: "None", Location: "Demo plot A" },
+    T8: { Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Height: "8", Spread: "6", Defect: "Dead wood", Location: "Demo plot B" },
+    T30: { Species: "台灣相思 Acacia confusa", DBH: "55 cm", Height: "14", Spread: "12", Defect: "Root plate lift", Location: "Demo plot C" }
   };
+
+  const METRIC_DEFS = [
+    {
+      key: "DBH",
+      label: "DBH",
+      tip: "胸徑 DBH",
+      aliases: ["DBH", "dbh", "DBH (mm)", "DBH(mm)", "dbh_mm", "胸徑", "胸径", "diameter", "Diameter"]
+    },
+    {
+      key: "Height",
+      label: "H",
+      tip: "高度 Height",
+      aliases: ["Height", "height", "Overall Height", "Overall Height (M)", "Overall Height(M)", "height_m", "高度", "H"]
+    },
+    {
+      key: "Spread",
+      label: "S",
+      tip: "冠幅 Spread",
+      aliases: ["Spread", "spread", "Crown spread", "Crown spread (M)", "Crown spread(M)", "spread_m", "crown", "Crown", "冠幅", "S"]
+    }
+  ];
+
+  const PRIMARY_KEYS = ["Tree ID", "TreeID", "tree_id", "tree_no", "TREE_ID", "ID", "id"];
+  const PREFERRED_OTHER = ["Species", "Defect", "Location"];
 
   const state = {
     photos: [],       // { name, url, treeId, file? }
     pdfs: [],         // { name, url, file? }
     treeId: null,
+    selectedProps: null,
     photoIndex: 0,
     pdfPage: null,
     pdfTotal: 20,
@@ -200,30 +225,206 @@
     renderPdfChips();
   }
 
+  function aliasHit(props, aliases) {
+    for (let i = 0; i < aliases.length; i++) {
+      const k = aliases[i];
+      if (Object.prototype.hasOwnProperty.call(props, k) && props[k] != null && String(props[k]) !== "") {
+        return { key: k, value: props[k] };
+      }
+    }
+    for (let i = 0; i < aliases.length; i++) {
+      const k = aliases[i];
+      if (Object.prototype.hasOwnProperty.call(props, k)) return { key: k, value: props[k] == null ? "" : props[k] };
+    }
+    return null;
+  }
+
+  function ensureCanonicalMetrics(props) {
+    if (!props || typeof props !== "object") return props;
+    METRIC_DEFS.forEach((def) => {
+      const hit = aliasHit(props, def.aliases);
+      if (hit && hit.key !== def.key) {
+        if (props[def.key] == null || props[def.key] === "") props[def.key] = hit.value;
+      }
+      if (!Object.prototype.hasOwnProperty.call(props, def.key)) props[def.key] = "";
+    });
+    return props;
+  }
+
+  function displayValue(v) {
+    if (v == null || v === "") return "—";
+    return String(v);
+  }
+
+  function attrCellHtml(key, value, extraClass) {
+    const empty = (value == null || value === "");
+    const cls = "editable" + (extraClass ? (" " + extraClass) : "") + (empty ? " empty" : "");
+    return "<td class=\"" + cls + "\" data-attr-key=\"" + escapeHtml(key) +
+      "\" title=\"雙擊編輯 double-click to edit\">" + escapeHtml(displayValue(value)) + "</td>";
+  }
+
+  function orderedOtherKeys(props) {
+    const metricKeys = new Set();
+    METRIC_DEFS.forEach((d) => {
+      metricKeys.add(d.key);
+      d.aliases.forEach((a) => metricKeys.add(a));
+    });
+    const skip = new Set(metricKeys);
+    PRIMARY_KEYS.forEach((k) => skip.add(k));
+    const keys = [];
+    PREFERRED_OTHER.forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(props, k)) keys.push(k);
+    });
+    Object.keys(props).forEach((k) => {
+      if (!k || k.charAt(0) === "_") return;
+      if (skip.has(k)) return;
+      if (keys.indexOf(k) >= 0) return;
+      keys.push(k);
+    });
+    return keys;
+  }
+
   function renderFeatureAttrs(props, treeId) {
     const box = $("feature-attrs-body");
     const tag = $("feature-attrs-tag");
     const title = $("feature-attrs-title");
     if (tag) tag.textContent = treeId || "—";
-    if (title) title.textContent = treeId ? ("樹木資料 Tree " + treeId) : "樹木資料 Attributes";
+    if (title) {
+      title.innerHTML = (treeId ? ("樹木資料 Tree " + escapeHtml(treeId)) : "樹木資料 Attributes") +
+        ' <span class="tag" id="feature-attrs-tag">' + escapeHtml(treeId || "—") + "</span>";
+    }
+    // Keep tag id in sync if title rewrite replaced it
+    const tag2 = $("feature-attrs-tag");
+    if (tag2) tag2.textContent = treeId || "—";
     if (!box) return;
     if (!props) {
-      box.innerHTML = '<p class="empty-hint">點選地圖上的樹木以顯示屬性。</p>';
+      state.selectedProps = null;
+      box.innerHTML = '<p class="empty-hint">點選地圖／清單上的樹木以顯示屬性。雙擊欄位可編輯。</p>';
       return;
     }
-    const keys = Object.keys(props).filter((k) => k && k.charAt(0) !== "_");
-    if (!keys.length) {
-      box.innerHTML = '<p class="empty-hint">沒有屬性 No attributes</p>';
-      return;
+    ensureCanonicalMetrics(props);
+    state.selectedProps = props;
+
+    const primaryKey = PRIMARY_KEYS.find((k) => Object.prototype.hasOwnProperty.call(props, k));
+    let html = "";
+    html += '<p class="feature-attrs-edit-hint">雙擊數值可編輯 · edits update export</p>';
+    if (primaryKey) {
+      html += '<table class="feature-attr-table"><tbody>';
+      html += "<tr><th>" + escapeHtml(primaryKey) + "</th>" + attrCellHtml(primaryKey, props[primaryKey]) + "</tr>";
+      html += "</tbody></table>";
     }
-    let html = "<table class=\"feature-attr-table\"><tbody>";
-    keys.forEach((k) => {
-      const v = props[k];
-      if (v == null || v === "") return;
-      html += "<tr><th>" + escapeHtml(k) + "</th><td>" + escapeHtml(String(v)) + "</td></tr>";
+
+    // Second row/area: DBH / H / S as three cells
+    html += '<div class="feature-metrics" role="group" aria-label="DBH Height Spread">';
+    METRIC_DEFS.forEach((def) => {
+      const v = props[def.key];
+      const empty = (v == null || v === "");
+      html += '<div class="feature-metric' + (empty ? " empty" : "") + '" data-attr-key="' + escapeHtml(def.key) +
+        '" title="' + escapeHtml(def.tip) + ' · 雙擊編輯">';
+      html += '<div class="feature-metric-label"><span class="feature-metric-abbr">' + escapeHtml(def.label) +
+        '</span><span class="feature-metric-sub">' + escapeHtml(def.tip) + "</span></div>";
+      html += '<div class="feature-metric-value editable' + (empty ? " empty" : "") +
+        '" data-attr-key="' + escapeHtml(def.key) + '">' + escapeHtml(displayValue(v)) + "</div>";
+      html += "</div>";
     });
-    html += "</tbody></table>";
+    html += "</div>";
+
+    const others = orderedOtherKeys(props);
+    if (others.length) {
+      html += '<table class="feature-attr-table"><tbody>';
+      others.forEach((k) => {
+        html += "<tr><th>" + escapeHtml(k) + "</th>" + attrCellHtml(k, props[k]) + "</tr>";
+      });
+      html += "</tbody></table>";
+    }
     box.innerHTML = html;
+    bindFeatureAttrEdits(box);
+  }
+
+  function applyAttrEdit(key, value) {
+    if (!key) return;
+    if (state.selectedProps) state.selectedProps[key] = value;
+    if (window.GpkgImport && typeof window.GpkgImport.applyTreeAttr === "function") {
+      window.GpkgImport.applyTreeAttr(state.treeId, key, value);
+    }
+    if (window.GpkgViewer && typeof window.GpkgViewer.applySelectedAttr === "function") {
+      window.GpkgViewer.applySelectedAttr(key, value);
+    }
+    if (window.GpkgViewer && typeof window.GpkgViewer.setStatus === "function") {
+      window.GpkgViewer.setStatus("已更新 " + key, "ok");
+    }
+  }
+
+  function startAttrEdit(el) {
+    if (!el || el.classList.contains("editing")) return;
+    const key = el.getAttribute("data-attr-key");
+    if (!key || !state.selectedProps) return;
+    const old = state.selectedProps[key] == null ? "" : String(state.selectedProps[key]);
+    el.classList.add("editing");
+    el.innerHTML = "<input type='text' />";
+    const inp = el.querySelector("input");
+    inp.value = old;
+    inp.focus();
+    inp.select();
+    let done = false;
+    function finish(ok) {
+      if (done) return;
+      done = true;
+      el.classList.remove("editing");
+      const text = inp.value;
+      if (!ok || text === old) {
+        el.textContent = displayValue(old);
+        el.classList.toggle("empty", old === "");
+        return;
+      }
+      applyAttrEdit(key, text);
+      el.textContent = displayValue(text);
+      el.classList.toggle("empty", text === "");
+      const box = $("feature-attrs-body");
+      if (box) {
+        box.querySelectorAll("[data-attr-key]").forEach((node) => {
+          if (node.getAttribute("data-attr-key") !== key) return;
+          if (node.classList.contains("feature-metric")) {
+            node.classList.toggle("empty", text === "");
+            return;
+          }
+          if (node === el) return;
+          if (node.classList.contains("editable") || node.classList.contains("feature-metric-value")) {
+            node.textContent = displayValue(text);
+            node.classList.toggle("empty", text === "");
+          }
+        });
+      }
+    }
+    inp.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+      if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    });
+    inp.addEventListener("blur", () => finish(true));
+  }
+
+  function bindFeatureAttrEdits(box) {
+    if (!box || box._attrEditBound) return;
+    box._attrEditBound = true;
+    box.addEventListener("dblclick", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+      if (!el || !box.contains(el)) return;
+      e.preventDefault();
+      startAttrEdit(el);
+    });
+    let lastTap = { el: null, t: 0 };
+    box.addEventListener("touchend", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
+      if (!el || !box.contains(el)) return;
+      const now = Date.now();
+      if (lastTap.el === el && now - lastTap.t < 450) {
+        lastTap = { el: null, t: 0 };
+        e.preventDefault();
+        startAttrEdit(el);
+        return;
+      }
+      lastTap = { el: el, t: now };
+    }, { passive: false });
   }
 
   function escapeHtml(s) {
@@ -241,8 +442,10 @@
 
     let useProps = props;
     if ((!useProps || !Object.keys(useProps).filter((k) => k.charAt(0) !== "_").length) && id && DEMO_ATTRS[id]) {
-      useProps = DEMO_ATTRS[id];
+      // Clone so edits do not mutate the shared demo template
+      useProps = Object.assign({}, DEMO_ATTRS[id]);
     }
+    if (useProps) ensureCanonicalMetrics(useProps);
 
     const hint = $("media-tree-hint");
     if (hint) hint.textContent = id ? ("已選 " + id) : "未選樹木";

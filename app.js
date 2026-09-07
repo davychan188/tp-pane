@@ -2043,6 +2043,19 @@
       marker.feature.properties[col] = next;
       if (col === state.labelField) bindFeatureLabel(marker);
     }
+    if (window.GpkgImport && typeof window.GpkgImport.applyTreeAttr === "function") {
+      const tid = (feat.properties && (feat.properties["Tree ID"] || feat.properties.TreeID || feat.properties.tree_id || feat.properties.ID)) || null;
+      if (tid) window.GpkgImport.applyTreeAttr(tid, col, next);
+    }
+    if (state.selectedMarker && marker && state.selectedMarker === marker) {
+      notifyMediaSelection(marker);
+    } else if (window.GpkgMedia && window.GpkgMedia.getState && feat.properties) {
+      const sel = window.GpkgMedia.getState().treeId;
+      const tid = String(feat.properties["Tree ID"] || feat.properties.TreeID || feat.properties.tree_id || feat.properties.ID || "").trim().toUpperCase();
+      if (sel && tid && String(sel).toUpperCase() === tid) {
+        window.GpkgMedia.setSelectedTree(sel, feat.properties);
+      }
+    }
     persistColorEdits();
     setStatus("Updated " + col + " and saved.", "ok");
   }
@@ -2843,7 +2856,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=54").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=55").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
@@ -3058,9 +3071,59 @@
     }));
   }
 
+  function applySelectedAttr(key, value) {
+    if (!key) return;
+    const m = state.selectedMarker;
+    if (m && m.feature) {
+      m.feature.properties = m.feature.properties || {};
+      if (!m.feature.properties._origProps) {
+        const snap = {};
+        Object.keys(m.feature.properties).forEach((k) => {
+          if (k && k.charAt(0) !== "_") snap[k] = m.feature.properties[k];
+        });
+        m.feature.properties._origProps = snap;
+      }
+      m.feature.properties[key] = value;
+      if (key === state.labelField) bindFeatureLabel(m);
+    }
+    // Also patch matching feature objects in loaded layers (list-only / shared props)
+    const wantIds = [];
+    if (m && m.feature && m.feature.properties) {
+      const p = m.feature.properties;
+      const tid = p["Tree ID"] || p.TreeID || p.tree_id || p.tree_no || p.ID || p.id;
+      if (tid != null) wantIds.push(String(tid).trim().toUpperCase());
+    } else if (window.GpkgMedia && window.GpkgMedia.getState) {
+      const tid = window.GpkgMedia.getState().treeId;
+      if (tid) wantIds.push(String(tid).trim().toUpperCase());
+    }
+    if (wantIds.length) {
+      state.files.forEach((f) => {
+        (f.layers || []).forEach((ly) => {
+          if (ly.kind !== "feature") return;
+          (ly.features || []).forEach((ft) => {
+            const p = (ft && ft.properties) || {};
+            const tid = String(p["Tree ID"] || p.TreeID || p.tree_id || p.tree_no || p.ID || p.id || "").trim().toUpperCase();
+            if (wantIds.indexOf(tid) < 0) return;
+            if (!Object.prototype.hasOwnProperty.call(p, key) && (key === "Height" || key === "Spread" || key === "DBH")) {
+              // ok to add
+            }
+            p[key] = value;
+            ft.properties = p;
+          });
+        });
+      });
+      const found = findLayer(state.selectedLayerKey);
+      if (found && found.layer) {
+        try { renderTable(found.layer); } catch (_) {}
+      }
+    }
+    persistColorEdits();
+  }
+
   window.GpkgViewer = {
     loadTreeFeatures: loadTreeFeatures,
     selectTreeById: selectTreeById,
+    applySelectedAttr: applySelectedAttr,
     hasVectorLayers: hasVectorLayers,
     hasMappedPoints: hasMappedPoints,
     setStatus: setStatus,
@@ -3074,10 +3137,10 @@
       type: "FeatureCollection",
       name: "demo_trees",
       features: [
-        { type: "Feature", properties: { "Tree ID": "T1", Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Defect: "_Cavity on trunk", Location: "Demo plot A" }, geometry: { type: "Point", coordinates: [114.0055, 22.2958] } },
-        { type: "Feature", properties: { "Tree ID": "T2", Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Defect: "None", Location: "Demo plot A" }, geometry: { type: "Point", coordinates: [114.0062, 22.2964] } },
-        { type: "Feature", properties: { "Tree ID": "T8", Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Defect: "Dead wood", Location: "Demo plot B" }, geometry: { type: "Point", coordinates: [114.0048, 22.2968] } },
-        { type: "Feature", properties: { "Tree ID": "T30", Species: "台灣相思 Acacia confusa", DBH: "55 cm", Defect: "Root plate lift", Location: "Demo plot C" }, geometry: { type: "Point", coordinates: [114.0068, 22.2952] } }
+        { type: "Feature", properties: { "Tree ID": "T1", Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Height: "12", Spread: "10", Defect: "_Cavity on trunk", Location: "Demo plot A" }, geometry: { type: "Point", coordinates: [114.0055, 22.2958] } },
+        { type: "Feature", properties: { "Tree ID": "T2", Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Height: "9", Spread: "7", Defect: "None", Location: "Demo plot A" }, geometry: { type: "Point", coordinates: [114.0062, 22.2964] } },
+        { type: "Feature", properties: { "Tree ID": "T8", Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Height: "8", Spread: "6", Defect: "Dead wood", Location: "Demo plot B" }, geometry: { type: "Point", coordinates: [114.0048, 22.2968] } },
+        { type: "Feature", properties: { "Tree ID": "T30", Species: "台灣相思 Acacia confusa", DBH: "55 cm", Height: "14", Spread: "12", Defect: "Root plate lift", Location: "Demo plot C" }, geometry: { type: "Point", coordinates: [114.0068, 22.2952] } }
       ]
     };
     const blob = new Blob([JSON.stringify(demo)], { type: "application/geo+json" });
