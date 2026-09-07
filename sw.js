@@ -1,9 +1,11 @@
-const CACHE = "gpkg-viewer-media-v50";
+const CACHE = "gpkg-viewer-media-v51";
 const ASSETS = [
   "./index.html",
   "./styles.css",
   "./app.js",
   "./media.js",
+  "./import-extras.js",
+  "./vendor/xlsx.full.min.js",
   "./manifest.json",
   "./vendor/leaflet.css",
   "./vendor/leaflet.js",
@@ -28,7 +30,9 @@ const ASSETS = [
   "./samples/media/T8_canopy.jpg",
   "./samples/media/T30_001.jpg",
   "./samples/media/T30_base.jpg",
-  "./samples/media/tree_survey_demo.pdf"
+  "./samples/media/tree_survey_demo.pdf",
+  "./samples/demo_trees.csv",
+  "./samples/demo_trees_list_only.csv"
 ];
 
 self.addEventListener("install", (event) => {

@@ -1034,3 +1034,135 @@ body.media-layout.table-collapsed .feature-attrs {
 /* When media panel hidden (if class removed) keep upstream layout */
 body:not(.media-layout) .media-panel { display: none !important; }
 body:not(.media-layout) .feature-attrs { display: none; }
+
+/* ---- Excel tree list + map PDF reference (no-GPKG workflow) ---- */
+.tree-list-panel .card-title .tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9eb6ff;
+  margin-left: 6px;
+}
+.tree-list {
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.tree-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  min-height: 40px;
+}
+.tree-list-item:hover {
+  border-color: rgba(91, 140, 255, 0.55);
+  background: #243056;
+}
+.tree-list-item.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
+  background: rgba(91, 140, 255, 0.14);
+}
+.tree-list-item strong {
+  font-size: 13px;
+  min-width: 2.5em;
+}
+.tree-list-sp {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tree-list-pin {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.map-ref-panel {
+  grid-area: map;
+  position: relative;
+  z-index: 450;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: #0a0f1c;
+  border-left: 1px solid transparent;
+}
+.map-ref-panel[hidden] {
+  display: none !important;
+}
+.map-ref-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, #182038, #12192b);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.map-ref-toolbar #map-ref-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c7d2fe;
+}
+.map-ref-actions {
+  display: flex;
+  gap: 6px;
+}
+.map-ref-frame,
+.map-ref-img {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #111;
+}
+.map-ref-img {
+  object-fit: contain;
+}
+/* When map-ref covers the map area, keep Leaflet underneath but not interactive */
+body.has-map-ref #map {
+  pointer-events: none;
+}
+body.has-map-ref #map .leaflet-control-container {
+  display: none;
+}
+/* Status stays above map-ref */
+body.has-map-ref .status {
+  z-index: 500;
+}
+
+/* Slightly tighter top actions on iPad landscape */
+@media (max-width: 1180px) and (orientation: landscape) {
+  .top-actions .btn {
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 12px;
+  }
+  .tree-list {
+    max-height: 160px;
+  }
+}

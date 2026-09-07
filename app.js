@@ -972,8 +972,17 @@
     state.focusRing.addTo(map);
   }
 
-  function focusMarkerOnMap(marker) {
+  function focusMarkerOnMap(marker, featFallback) {
     if (!marker) {
+      if (featFallback && featFallback.properties) {
+        const p = featFallback.properties;
+        const tid = p["Tree ID"] || p.TreeID || p.tree_id || p.tree_no || p.ID || p.id;
+        if (tid) {
+          selectTreeById(String(tid), p);
+          setStatus("Selected " + tid + " (no map coordinates).", "ok");
+          return;
+        }
+      }
       setStatus("Could not find that tree on the map.", "warn");
       return;
     }
@@ -1046,6 +1055,9 @@
     if (!window.GpkgMedia || typeof window.GpkgMedia.setSelectedTree !== "function") return;
     if (!marker || !marker.feature) {
       window.GpkgMedia.setSelectedTree(null, null);
+      if (window.GpkgImport && window.GpkgImport.syncTreeListHighlight) {
+        window.GpkgImport.syncTreeListHighlight(null);
+      }
       return;
     }
     const props = marker.feature.properties || {};
@@ -1053,6 +1065,9 @@
       props["Tree ID"] || props.TreeID || props.tree_id || props.tree_no ||
       props.TREE_ID || props.ID || props.id || null;
     window.GpkgMedia.setSelectedTree(id, props);
+    if (window.GpkgImport && window.GpkgImport.syncTreeListHighlight) {
+      window.GpkgImport.syncTreeListHighlight(id);
+    }
   }
 
   function refreshEditPanel() {
@@ -1920,10 +1935,11 @@
       if (!tr) return;
       const i = parseInt(tr.getAttribute("data-i"), 10);
       if (!layer.features || !layer.features[i]) return;
-      const marker = findMarkerForFeature(layer, layer.features[i]);
+      const feat = layer.features[i];
+      const marker = findMarkerForFeature(layer, feat);
       wrap.querySelectorAll("tr.selected-row").forEach((row) => row.classList.remove("selected-row"));
       tr.classList.add("selected-row");
-      focusMarkerOnMap(marker);
+      focusMarkerOnMap(marker, feat);
     };
     wrap.ondblclick = function (e) {
       const td = e.target && e.target.closest ? e.target.closest("td.editable") : null;
@@ -2610,6 +2626,10 @@
     state.activeImportedId = null;
     refreshImportedBasemapUi();
     idbClear();
+    if (window.GpkgImport) {
+      if (window.GpkgImport.clearTreeList) window.GpkgImport.clearTreeList();
+      if (window.GpkgImport.clearMapRef) window.GpkgImport.clearMapRef();
+    }
     setStatus("Cleared.", "");
   }
   $("btn-clear").addEventListener("click", clearAllFiles);
@@ -2819,7 +2839,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=50").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=51").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
@@ -2876,6 +2896,175 @@
     }
   })();
 
+  /**
+   * Load trees from Excel/CSV (or any Feature[]). Features may lack geometry.
+   * Markers are created only for Point geometries; all rows go into the layer catalog.
+   */
+  async function loadTreeFeatures(features, sourceName) {
+    features = (features || []).slice();
+    if (!features.length) {
+      setStatus("No trees to load.", "warn");
+      return;
+    }
+    applyHk1980IfNeeded(features);
+    features.forEach((ft) => {
+      const p = ft.properties || {};
+      if (p.color && !p._editColor) p._editColor = p.color;
+      ft.properties = p;
+    });
+
+    const mapped = features.filter((ft) => ft && ft.geometry && ft.geometry.type);
+    const fileId = "excel-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+    const displayName = sourceName || "trees.xlsx";
+    const rec = { id: fileId, name: displayName, size: 0, geoPackage: null, layers: [], fromExcel: true };
+    const geomType = mapped.length ? detectGeomType(mapped) : "Point";
+    const columns = collectPropertyKeys(features);
+    const color = nextColor();
+    const tableName = displayName.replace(/\.[^.]+$/, "") || "trees";
+
+    // Remove previous excel-sourced layers to avoid duplicates
+    state.files.filter((f) => f.fromExcel).slice().forEach((f) => removeFile(f.id));
+
+    let leafletLayer = null;
+    if (mapped.length) {
+      leafletLayer = L.geoJSON(
+        { type: "FeatureCollection", features: mapped },
+        {
+          style: (feat) => styleFor((feat.properties && feat.properties._editColor) || color, geomType),
+          pointToLayer: pointToLayer(color),
+          onEachFeature: (feat, lyr) => {
+            bindPopup(lyr, feat, tableName);
+            attachEditHandlers(lyr);
+          }
+        }
+      );
+      leafletLayer.addTo(map);
+      leafletLayer.eachLayer((l) => {
+        applySavedColor(l, rec.name);
+        applyFeatureStyle(l, { color: color, geomType: geomType });
+      });
+    } else {
+      leafletLayer = L.layerGroup();
+      leafletLayer.addTo(map);
+    }
+
+    rec.layers.push({
+      key: layerKey(fileId, tableName),
+      tableName: tableName,
+      kind: "feature",
+      color: color,
+      count: features.length,
+      loaded: features.length,
+      truncated: false,
+      geomType: geomType,
+      columns: columns,
+      features: features,
+      leafletLayer: leafletLayer,
+      visible: true
+    });
+    state.files.push(rec);
+    refreshLabelFieldOptions();
+    // Prefer Tree ID label field when present
+    if (columns.indexOf("Tree ID") >= 0) {
+      state.labelField = "Tree ID";
+      const sel = $("label-field");
+      if (sel) sel.value = "Tree ID";
+    }
+    applyAllLabels();
+    renderSidebar();
+    selectLayer(rec.layers[0].key);
+    if (leafletLayer && leafletLayer.getBounds && mapped.length) {
+      try {
+        const b = leafletLayer.getBounds();
+        if (b && b.isValid()) map.fitBounds(b, { padding: [28, 28], maxZoom: 16 });
+      } catch (_) {}
+    }
+    if (window.GpkgImport && window.GpkgImport.updateMapRefVisibility) {
+      window.GpkgImport.updateMapRefVisibility();
+    }
+    setStatus(
+      "Loaded " + features.length + " trees from " + displayName +
+      (mapped.length ? (" (" + mapped.length + " on map)") : " (list only — no coordinates)"),
+      "ok"
+    );
+  }
+
+  function selectTreeById(treeId, props) {
+    if (!treeId) return;
+    const idWant = String(treeId).trim().toUpperCase();
+    let foundMarker = null;
+    let foundFeat = null;
+    let foundLayer = null;
+    state.files.forEach((f) => {
+      f.layers.forEach((ly) => {
+        if (ly.kind !== "feature") return;
+        (ly.features || []).forEach((ft) => {
+          const p = (ft && ft.properties) || {};
+          const tid = String(p["Tree ID"] || p.TreeID || p.tree_id || p.tree_no || p.ID || p.id || "").trim().toUpperCase();
+          if (tid === idWant) {
+            foundFeat = ft;
+            foundLayer = ly;
+          }
+        });
+        if (ly.leafletLayer && ly.leafletLayer.eachLayer) {
+          ly.leafletLayer.eachLayer((l) => {
+            if (!l.feature) return;
+            const p = l.feature.properties || {};
+            const tid = String(p["Tree ID"] || p.TreeID || p.tree_id || p.tree_no || p.ID || p.id || "").trim().toUpperCase();
+            if (tid === idWant) foundMarker = l;
+          });
+        }
+      });
+    });
+    if (foundLayer) selectLayer(foundLayer.key);
+    if (foundMarker) {
+      selectMarker(foundMarker);
+      highlightCatalogRowForMarker(foundMarker);
+      try {
+        if (foundMarker.getLatLng) {
+          map.panTo(foundMarker.getLatLng(), { animate: !IS_TOUCH });
+        }
+      } catch (_) {}
+    } else {
+      // No map marker (no coords) — still drive media + attrs
+      selectMarker(null);
+      if (window.GpkgMedia) {
+        window.GpkgMedia.setSelectedTree(treeId, props || (foundFeat && foundFeat.properties) || null);
+      }
+      if (window.GpkgImport && window.GpkgImport.syncTreeListHighlight) {
+        window.GpkgImport.syncTreeListHighlight(treeId);
+      }
+    }
+  }
+
+  function hasVectorLayers() {
+    return state.files.some((f) => f.layers && f.layers.some((l) => l.kind === "feature" && l.features && l.features.length));
+  }
+
+  function hasMappedPoints() {
+    return state.files.some((f) => f.layers && f.layers.some((l) => {
+      if (l.kind !== "feature" || !l.leafletLayer) return false;
+      let n = 0;
+      if (l.leafletLayer.eachLayer) {
+        l.leafletLayer.eachLayer((ly) => {
+          if (ly && ly.feature && ly.feature.geometry) n += 1;
+        });
+      }
+      return n > 0;
+    }));
+  }
+
+  window.GpkgViewer = {
+    loadTreeFeatures: loadTreeFeatures,
+    selectTreeById: selectTreeById,
+    hasVectorLayers: hasVectorLayers,
+    hasMappedPoints: hasMappedPoints,
+    setStatus: setStatus,
+    invalidateMap: function () { try { map.invalidateSize(); } catch (_) {} },
+    getMap: function () { return map; },
+    getState: function () { return state; }
+  };
+
   async function loadDemoTrees() {
     const demo = {
       type: "FeatureCollection",
@@ -2908,7 +3097,15 @@
         highlightCatalogRowForMarker(first);
       }
     }
-    setStatus("示範樹木 T1 / T2 / T8 / T30 已載入 — 點選地圖可轉樹與媒體。", "ok");
+    if (window.GpkgImport && window.GpkgImport.setTrees) {
+      window.GpkgImport.setTrees(demo.features.map((ft) => ({
+        id: String((ft.properties || {})["Tree ID"] || ""),
+        props: ft.properties || {},
+        feature: ft,
+        hasCoords: true
+      })), "demo_trees");
+    }
+    setStatus("示範樹木 T1 / T2 / T8 / T30 已載入 — 點選地圖或清單可轉樹與媒體。", "ok");
   }
 
   if ($("btn-demo-trees")) {
