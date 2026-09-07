@@ -6,12 +6,20 @@
   "use strict";
 
   const ID_HEADER_HINTS = [
-    "tree id", "treeid", "tree_id", "tree-id",
-    "tree_no", "tree no", "treeno", "tree number", "treenumber", "tree_num",
-    "plant id", "plantid", "asset id", "assetid",
-    "樹號", "树木编号", "樹木編號", "樹木编号", "树木編號", "編號", "编号",
+    "tree id", "treeid", "tree_id", "tree-id", "tree.id",
+    "tree_no", "tree no", "tree no.", "treeno", "tree number", "treenumber", "tree_num", "tree#",
+    "plant id", "plantid", "plant no", "plant no.", "plant_no", "plantno",
+    "asset id", "assetid", "asset no", "asset_no",
+    "tag", "tag no", "tag_no", "tagno", "tree tag", "treetag", "label",
+    "tree", "trees",
+    "號碼", "木號", "树号", "樹號", "树木编号", "樹木編號", "樹木编号", "树木編號", "編號", "编号",
+    "no.", "no", "num", "number",
     "id", "fid", "gid"
   ];
+  // Short / ambiguous hints: exact (or compact) match only — avoid "no" hitting "longitude"
+  const ID_HEADER_EXACT_ONLY = new Set([
+    "no", "no.", "num", "number", "tag", "label", "tree", "trees", "id", "fid", "gid", "編號", "编号"
+  ]);
 
   const SPECIES_HINTS = ["species", "scientific", "學名", "树种", "樹種", "chinese name", "中文名"];
   const DBH_HINTS = ["dbh", "diameter", "胸徑", "胸径"];
@@ -41,15 +49,21 @@
       .replace(/"/g, "&quot;");
   }
 
+  function stripBom(s) {
+    return String(s == null ? "" : s).replace(/^\uFEFF/, "");
+  }
+
   function normHeader(h) {
-    return String(h == null ? "" : h).trim().toLowerCase().replace(/[\s_\-]+/g, " ");
+    return stripBom(h).trim().toLowerCase().replace(/[\s_\-.#]+/g, " ").replace(/\s+/g, " ").trim();
   }
 
   function compactHeader(h) {
     return normHeader(h).replace(/\s+/g, "");
   }
 
-  function findCol(headers, hints) {
+  function findCol(headers, hints, opts) {
+    opts = opts || {};
+    const exactOnly = opts.exactOnly || null;
     const norms = headers.map((h) => ({ raw: h, n: normHeader(h), c: compactHeader(h) }));
     for (const hint of hints) {
       const hn = normHeader(hint);
@@ -57,23 +71,95 @@
       const hit = norms.find((x) => x.n === hn || x.c === hc);
       if (hit) return hit.raw;
     }
-    // partial contains for longer hints
+    // partial contains for longer hints (skip short / ambiguous)
     for (const hint of hints) {
       const hn = normHeader(hint);
-      if (hn.length < 2) continue;
-      const hit = norms.find((x) => x.n.indexOf(hn) >= 0 || hn.indexOf(x.n) >= 0);
+      if (hn.length < 3) continue;
+      if (exactOnly && exactOnly.has(normHeader(hint))) continue;
+      const hit = norms.find((x) => {
+        if (!x.n || x.n.length < 2) return false;
+        return x.n.indexOf(hn) >= 0 || (x.n.length >= 3 && hn.indexOf(x.n) >= 0);
+      });
       if (hit) return hit.raw;
     }
     return null;
   }
 
   function findIdCol(headers) {
-    // Prefer explicit tree-id style over bare "id"
-    const strong = ID_HEADER_HINTS.filter((h) => h !== "id" && h !== "fid" && h !== "gid" && h !== "編號" && h !== "编号");
-    let col = findCol(headers, strong);
+    // Prefer explicit tree-id style over bare "id" / "no"
+    const strong = ID_HEADER_HINTS.filter((h) => !ID_HEADER_EXACT_ONLY.has(normHeader(h)));
+    let col = findCol(headers, strong, { exactOnly: ID_HEADER_EXACT_ONLY });
     if (col) return col;
-    col = findCol(headers, ["編號", "编号", "id", "fid", "gid"]);
+    col = findCol(headers, ["編號", "编号", "號碼", "木號", "id", "fid", "gid", "tag", "label", "no.", "no", "num", "number", "tree", "trees"], { exactOnly: ID_HEADER_EXACT_ONLY });
     return col;
+  }
+
+  function looksLikeTreeId(v) {
+    const s = stripBom(v).trim();
+    if (!s || s.length > 40) return false;
+    if (/^t\d{1,6}$/i.test(s)) return true;
+    if (/^[a-z]{1,6}[-_]?\d{1,6}$/i.test(s)) return true;
+    // Mostly alphanumeric IDs (must include a letter or digit; reject pure punctuation)
+    if (!/^[A-Za-z0-9][A-Za-z0-9_\-./]*$/.test(s)) return false;
+    if (!/[A-Za-z0-9]/.test(s)) return false;
+    // Reject obvious non-IDs (long prose / species names with spaces already fail regex)
+    return true;
+  }
+
+  function scoreColumnAsIds(rows, col) {
+    let good = 0;
+    let total = 0;
+    const n = Math.min(rows.length, 80);
+    for (let i = 0; i < n; i++) {
+      const v = rows[i][col];
+      if (v == null || String(v).trim() === "") continue;
+      total++;
+      if (looksLikeTreeId(v)) good++;
+    }
+    return total ? good / total : 0;
+  }
+
+  function firstNonEmptyCol(headers, rows) {
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      const hit = rows.some((r) => r[h] != null && String(r[h]).trim() !== "");
+      if (hit) return h;
+    }
+    return headers[0] || null;
+  }
+
+  /** Resolve ID column with forgiving fallbacks. Returns { col, note }. */
+  function resolveIdCol(headers, rows) {
+    const listed = headers.map((h) => stripBom(h).trim() || "(空白)").join("、") || "（無）";
+    let col = findIdCol(headers);
+    if (col) return { col: col, note: null };
+
+    // Fall back to first column when values look like tree IDs (T1, T30, alphanumeric)
+    if (headers.length) {
+      const first = headers[0];
+      if (scoreColumnAsIds(rows, first) >= 0.5) {
+        return { col: first, note: "自動使用第一欄「" + stripBom(first).trim() + "」作為樹木編號" };
+      }
+    }
+
+    // Best-scoring column among remaining
+    let best = null;
+    let bestScore = 0;
+    headers.forEach((h) => {
+      const sc = scoreColumnAsIds(rows, h);
+      if (sc > bestScore) { bestScore = sc; best = h; }
+    });
+    if (best && bestScore >= 0.5) {
+      return { col: best, note: "自動使用欄「" + stripBom(best).trim() + "」作為樹木編號" };
+    }
+
+    // Last resort: first non-empty column
+    const fallback = firstNonEmptyCol(headers, rows);
+    if (fallback) {
+      return { col: fallback, note: "找不到明確編號欄，已改用「" + stripBom(fallback).trim() + "」。現有欄名：" + listed };
+    }
+
+    throw new Error("找不到樹木編號欄。現有欄名：" + listed);
   }
 
   function rememberUrl(url) {
@@ -112,7 +198,7 @@
     }
     if (cur.length || row.length) { row.push(cur); rows.push(row); }
     if (!rows.length) return [];
-    const headers = rows[0].map((h) => String(h || "").trim());
+    const headers = rows[0].map((h) => stripBom(String(h || "")).trim());
     const out = [];
     for (let r = 1; r < rows.length; r++) {
       const cells = rows[r];
@@ -175,10 +261,19 @@
 
   function rowsToFeatures(rows) {
     if (!rows || !rows.length) throw new Error("表格沒有資料列");
+    // Normalize BOM on keys (CSV / some Excel exports)
+    rows = rows.map((row) => {
+      const out = {};
+      Object.keys(row).forEach((k) => {
+        out[stripBom(k).trim() || k] = row[k];
+      });
+      return out;
+    });
     const headers = Object.keys(rows[0]);
-    const idCol = findIdCol(headers);
+    const resolved = resolveIdCol(headers, rows);
+    const idCol = resolved.col;
     if (!idCol) {
-      throw new Error("找不到樹木編號欄（Tree ID / tree_no / 樹號 / ID …）");
+      throw new Error("找不到樹木編號欄。現有欄名：" + (headers.map((h) => stripBom(h).trim() || "(空白)").join("、") || "（無）"));
     }
     const speciesCol = findCol(headers, SPECIES_HINTS);
     const dbhCol = findCol(headers, DBH_HINTS);
@@ -229,7 +324,7 @@
       });
     });
     if (!features.length) throw new Error("沒有有效的樹木列（編號欄為空？）");
-    return { features: features, idCol: idCol };
+    return { features: features, idCol: idCol, idColNote: resolved.note };
   }
 
   function renderTreeList() {
@@ -292,8 +387,9 @@
       ? window.GpkgViewer.hasMappedPoints()
       : (window.GpkgViewer && window.GpkgViewer.hasVectorLayers ? window.GpkgViewer.hasVectorLayers() : false);
     // Show reference map when loaded AND (no map markers OR user forced show).
-    // Excel-only lists without coords keep the PDF visible.
-    const show = !!(state.mapRefUrl) && (!hasMapped || document.body.classList.contains("force-map-ref"));
+    // Excel-only / demo without coords → PDF covers black Leaflet. After import we set force-map-ref.
+    const forced = document.body.classList.contains("force-map-ref");
+    const show = !!(state.mapRefUrl) && (!hasMapped || forced);
     panel.hidden = !show;
     document.body.classList.toggle("has-map-ref", show);
     const mapEl = $("map");
@@ -303,8 +399,32 @@
     }
   }
 
+  function hideMapRefViewers() {
+    const frame = $("map-ref-frame");
+    const obj = $("map-ref-object");
+    const emb = $("map-ref-embed");
+    const img = $("map-ref-img");
+    const openTab = $("map-ref-open-tab");
+    if (frame) { frame.hidden = true; frame.removeAttribute("src"); }
+    if (obj) {
+      obj.hidden = true;
+      try { obj.removeAttribute("data"); } catch (e) { /* ignore */ }
+      obj.data = "";
+    }
+    if (emb) {
+      try { emb.removeAttribute("src"); } catch (e) { /* ignore */ }
+      emb.src = "";
+    }
+    if (img) { img.hidden = true; img.removeAttribute("src"); }
+    if (openTab) {
+      openTab.hidden = true;
+      openTab.removeAttribute("href");
+    }
+  }
+
   function showMapRef(file) {
     revokeMapRefUrl();
+    hideMapRefViewers();
     const name = file.name || "map";
     const lower = name.toLowerCase();
     const url = rememberUrl(URL.createObjectURL(file));
@@ -312,44 +432,60 @@
     state.mapRefName = name;
 
     const frame = $("map-ref-frame");
+    const obj = $("map-ref-object");
+    const emb = $("map-ref-embed");
     const img = $("map-ref-img");
     const label = $("map-ref-label");
+    const openTab = $("map-ref-open-tab");
 
     if (/\.pdf$/i.test(lower) || (file.type && file.type.indexOf("pdf") >= 0)) {
       state.mapRefKind = "pdf";
-      if (img) { img.hidden = true; img.removeAttribute("src"); }
+      // Safari often fails blob: PDF inside iframe — prefer <object> with nested <embed> fallback
+      if (emb) {
+        emb.setAttribute("type", "application/pdf");
+        emb.src = url;
+      }
+      if (obj) {
+        obj.hidden = false;
+        obj.setAttribute("type", "application/pdf");
+        obj.data = url;
+      }
       if (frame) {
-        frame.hidden = false;
-        frame.src = url;
+        // Keep iframe hidden; object/embed cover Safari. Link below always works.
+        frame.hidden = true;
+        frame.removeAttribute("src");
+      }
+      if (openTab) {
+        openTab.hidden = false;
+        openTab.href = url;
+        openTab.setAttribute("download", name);
+        openTab.textContent = "新分頁開啟地圖 PDF";
       }
     } else {
       state.mapRefKind = "image";
-      if (frame) { frame.hidden = true; frame.removeAttribute("src"); }
       if (img) {
         img.hidden = false;
         img.src = url;
         img.alt = name;
       }
+      if (openTab) {
+        openTab.hidden = false;
+        openTab.href = url;
+        openTab.removeAttribute("download");
+        openTab.textContent = "新分頁開啟地圖圖片";
+      }
     }
     if (label) label.textContent = "地圖參考 · " + name;
-    // Prefer showing reference when no GPKG vectors yet
-    document.body.classList.remove("force-map-ref");
+    // Always force-show after import so user sees PDF/image immediately
+    // (even if Leaflet demo trees / GPKG markers exist — toggle can switch back)
+    document.body.classList.add("force-map-ref");
     updateMapRefVisibility();
-    // If vectors exist, still show briefly with force so user sees import worked; then leave toggle
-    if (window.GpkgViewer && window.GpkgViewer.hasMappedPoints && window.GpkgViewer.hasMappedPoints()) {
-      // Keep Leaflet markers visible by default; user can toggle PDF
-      document.body.classList.remove("force-map-ref");
-      updateMapRefVisibility();
-    }
-    setImportStatus("已載入地圖參考：" + name, "ok");
+    setImportStatus("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet）", "ok");
   }
 
   function clearMapRef() {
     revokeMapRefUrl();
-    const frame = $("map-ref-frame");
-    const img = $("map-ref-img");
-    if (frame) { frame.hidden = true; frame.removeAttribute("src"); }
-    if (img) { img.hidden = true; img.removeAttribute("src"); }
+    hideMapRefViewers();
     document.body.classList.remove("force-map-ref");
     updateMapRefVisibility();
     setImportStatus("已清除地圖參考", "");
@@ -390,11 +526,10 @@
     }
 
     const nCoord = state.trees.filter((t) => t.hasCoords).length;
-    setImportStatus(
-      "已匯入 Excel／CSV：" + state.trees.length + " 棵樹" +
-      (nCoord ? "（" + nCoord + " 有座標）" : "（無座標 — 請用左側清單選樹）"),
-      "ok"
-    );
+    let msg = "已匯入 Excel／CSV：" + state.trees.length + " 棵樹" +
+      (nCoord ? "（" + nCoord + " 有座標）" : "（無座標 — 請用左側清單選樹）");
+    if (parsed.idColNote) msg += " · " + parsed.idColNote;
+    setImportStatus(msg, parsed.idColNote && parsed.idColNote.indexOf("找不到明確") >= 0 ? "warn" : "ok");
     updateMapRefVisibility();
   }
 

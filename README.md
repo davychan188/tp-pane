@@ -49,13 +49,16 @@ http://127.0.0.1:8765/?demo=1
 適合只有 Excel 樹木清單＋現場地圖 PDF＋相片資料夾的情況：
 
 1. **匯入 Excel**（`.xlsx` / `.xls` / `.csv`）  
-   - 至少要有樹木編號欄（自動辨識：`Tree ID`、`TreeID`、`tree_no`、`樹號`、`ID` 等）  
+   - 樹木編號欄寬鬆辨識：`Tree ID`、`Tree No.`、`No.`、`Tag`、`Label`、`TREE`、`Plant No`、`樹號`、`木號`、`號碼`、`編號`、`ID` 等  
+   - CSV 會去掉 BOM；若仍對不到欄名，會依內容（如 `T1`／`T30`）自動用第一欄，並在狀態列說明用了哪一欄  
+   - 失敗時錯誤會列出實際欄名：`找不到樹木編號欄。現有欄名：…`  
    - 選填：Species／樹種、DBH／胸徑、Defect／缺陷、Location／位置  
    - 若有座標（`Latitude`/`Longitude` 或 `X`/`Y`／Easting／Northing）會在地圖上顯示標記  
    - **無座標**時左側會出現可捲動的 **樹木清單**，點選即可看屬性與媒體
 2. **匯入地圖 PDF**（或 JPG／PNG）  
-   - 沒有 GPKG／沒有座標標記時，左側地圖區會顯示此參考圖  
-   - 若同時有地圖標記，可用工具列 **「切換地圖」** 在 Leaflet 地圖與 PDF／圖片之間切換
+   - 匯入後會**立即**蓋住左側地圖區（`force-map-ref`）；無 GPKG／無座標標記時亦會持續顯示  
+   - 以 `<object>`／`<embed>` 顯示 PDF（Safari 對 `blob:` iframe 較不穩），並提供 **「新分頁開啟地圖 PDF」**  
+   - 若同時有地圖標記，可用工具列 **「切換地圖」** 在 Leaflet 與 PDF／圖片之間切換
 3. **媒體資料夾**（與以往相同）  
    - 相片檔名：`T1_*.jpg` 等  
    - PDF 調查報告會顯示頁碼掣
@@ -67,13 +70,15 @@ http://127.0.0.1:8765/?demo=1
 |---|---|
 | `samples/demo_trees.csv` | 含部分座標的示範清單 |
 | `samples/demo_trees_list_only.csv` | 僅清單（中文欄名、無座標） |
+| `samples/demo_trees_alt_headers.csv` | `Plant No` 等寬鬆欄名樣本 |
 | `samples/media/` | 示範相片與調查 PDF |
 | `templates/Tree Inventory Template.xlsx` | 目錄匯出範本（上游） |
 
 ### Excel 解析說明
 
 - 瀏覽器內使用 **SheetJS（xlsx）**：已放到 `vendor/xlsx.full.min.js`，可離線使用  
-- `.csv` 亦可（`FileReader` 本機解析，不需 SheetJS）
+- `.csv` 亦可（`FileReader` 本機解析，不需 SheetJS；會 strip BOM）  
+- 編號欄找不到時會依儲存格內容推斷，並在狀態列顯示所用欄名
 
 ## iPad mini 使用提示
 
@@ -140,7 +145,7 @@ gpkg-viewer-media/
 ## 限制
 
 - PDF 多頁跳轉依賴瀏覽器內建 PDF 檢視（`#page=`）；部分流動瀏覽器預覽較弱
-- 地圖參考 PDF 以 `<iframe>`／`<object>` 顯示（MVP，不另加 pdf.js）
+- 地圖參考 PDF 以 `<object>`／`<embed>`（＋ iframe 後備）顯示；Safari 可改用「新分頁開啟」（MVP，不另加 pdf.js）
 - HEIC 等格式視系統／瀏覽器支援而定；建議 JPG／PNG
 - 大型 GPKG 仍受上游「圖徵上限」影響（預設 25,000）
 - 無寫入上游 repo；請在此資料夾自行備份／發佈

@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=51" />
-  <link rel="stylesheet" href="styles.css?v=51" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=52" />
+  <link rel="stylesheet" href="styles.css?v=52" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -180,12 +180,19 @@
     <div class="map-ref-toolbar">
       <span id="map-ref-label">地圖參考 Map reference</span>
       <div class="map-ref-actions">
+        <a class="btn" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="Open map PDF/image in a new tab">新分頁開啟地圖 PDF</a>
         <button class="btn" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換地圖</button>
         <button class="btn" type="button" id="btn-map-ref-clear">清除</button>
       </div>
     </div>
-    <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
-    <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
+    <div class="map-ref-viewer" id="map-ref-viewer">
+      <!-- Safari often fails blob: PDF in iframe; object + nested embed fallback; iframe kept unused unless needed -->
+      <object id="map-ref-object" class="map-ref-frame map-ref-object" type="application/pdf" hidden>
+        <embed id="map-ref-embed" class="map-ref-frame map-ref-embed" type="application/pdf" />
+      </object>
+      <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
+      <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
+    </div>
   </div>
   <div class="status" id="status">Starting…</div>
 
@@ -243,11 +250,11 @@
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=51"></script>
-  <script src="vendor/geopackage.min.js?v=51"></script>
-  <script src="vendor/xlsx.full.min.js?v=51"></script>
-  <script src="media.js?v=51"></script>
-  <script src="import-extras.js?v=51"></script>
-  <script src="app.js?v=51"></script>
+  <script src="vendor/leaflet.js?v=52"></script>
+  <script src="vendor/geopackage.min.js?v=52"></script>
+  <script src="vendor/xlsx.full.min.js?v=52"></script>
+  <script src="media.js?v=52"></script>
+  <script src="import-extras.js?v=52"></script>
+  <script src="app.js?v=52"></script>
 </body>
 </html>

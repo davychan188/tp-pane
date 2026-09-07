@@ -1096,13 +1096,19 @@ body:not(.media-layout) .feature-attrs { display: none; }
 .map-ref-panel {
   grid-area: map;
   position: relative;
-  z-index: 450;
+  z-index: 800;
   display: flex;
   flex-direction: column;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background: #0a0f1c;
   border-left: 1px solid transparent;
+  pointer-events: auto;
 }
 .map-ref-panel[hidden] {
   display: none !important;
@@ -1118,6 +1124,7 @@ body:not(.media-layout) .feature-attrs { display: none; }
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+  z-index: 2;
 }
 .map-ref-toolbar #map-ref-label {
   flex: 1;
@@ -1130,9 +1137,26 @@ body:not(.media-layout) .feature-attrs { display: none; }
 .map-ref-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.map-ref-actions #map-ref-open-tab {
+  text-decoration: none;
+  color: inherit;
+}
+.map-ref-viewer {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0a0f1c;
 }
 .map-ref-frame,
-.map-ref-img {
+.map-ref-img,
+.map-ref-object,
+.map-ref-embed {
   flex: 1 1 auto;
   width: 100%;
   height: 100%;
@@ -1140,19 +1164,33 @@ body:not(.media-layout) .feature-attrs { display: none; }
   border: 0;
   background: #111;
 }
+.map-ref-object,
+.map-ref-embed {
+  display: block;
+}
+.map-ref-object[hidden],
+.map-ref-embed[hidden],
+.map-ref-frame[hidden],
+.map-ref-img[hidden] {
+  display: none !important;
+}
 .map-ref-img {
   object-fit: contain;
 }
-/* When map-ref covers the map area, keep Leaflet underneath but not interactive */
+/* When map-ref covers the map area, hide / mute Leaflet so black tiles don't show through */
 body.has-map-ref #map {
   pointer-events: none;
+  visibility: hidden;
+}
+body.has-map-ref #map.map-ref-active {
+  visibility: hidden;
 }
 body.has-map-ref #map .leaflet-control-container {
   display: none;
 }
 /* Status stays above map-ref */
 body.has-map-ref .status {
-  z-index: 500;
+  z-index: 900;
 }
 
 /* Slightly tighter top actions on iPad landscape */
