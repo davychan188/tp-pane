@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=52" />
-  <link rel="stylesheet" href="styles.css?v=52" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=53" />
+  <link rel="stylesheet" href="styles.css?v=53" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -121,6 +121,15 @@
         <input id="map-ref-file-input-side" type="file" accept=".pdf,image/*,application/pdf" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <div class="hint" style="margin-top:6px">可只匯入清單＋地圖 PDF＋媒體，不必開 .gpkg。</div>
+      <div class="annot-controls" id="annot-controls-side">
+        <button class="btn full" type="button" id="btn-annot-mode" title="Add-tree mode · click map to place trees">加樹模式 Add tree</button>
+        <div class="annot-id-mode" role="group" aria-label="Tree ID mode">
+          <button class="btn annot-seg on" type="button" data-id-mode="auto" id="btn-id-auto" title="Auto ID T1, T2…">自動編號 Auto</button>
+          <button class="btn annot-seg" type="button" data-id-mode="manual" id="btn-id-manual" title="Prompt for tree ID">手動編號 Manual</button>
+        </div>
+        <button class="btn full" type="button" id="btn-annot-export" title="Export tree list CSV">匯出列表 Export CSV</button>
+        <div class="hint" id="annot-hint">開啟「加樹模式」後，點地圖圖片或 Leaflet 放置樹木。PNG／JPG 地圖最合適。</div>
+      </div>
     </div>
 
     <div class="settings-card">
@@ -165,7 +174,7 @@
 
     <div class="settings-card tree-list-panel" id="tree-list-panel" hidden>
       <div class="card-title">樹木清單 Tree list <span class="tag" id="tree-list-count"></span></div>
-      <div class="hint" style="margin:0 0 6px">無座標時請由此選樹。有座標則地圖亦可點選。</div>
+      <div class="hint" style="margin:0 0 6px">無座標／無相片亦可由此選樹。加樹模式會顯示 x／y（%）。</div>
       <div class="tree-list" id="tree-list" role="listbox" aria-label="樹木清單"></div>
     </div>
 
@@ -180,6 +189,12 @@
     <div class="map-ref-toolbar">
       <span id="map-ref-label">地圖參考 Map reference</span>
       <div class="map-ref-actions">
+        <button class="btn" type="button" id="btn-annot-mode-bar" title="Add-tree mode">加樹模式</button>
+        <div class="annot-id-mode annot-id-mode-inline" role="group" aria-label="Tree ID mode" id="annot-id-mode-bar">
+          <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動編號</button>
+          <button class="btn annot-seg" type="button" data-id-mode="manual" title="Manual ID">手動編號</button>
+        </div>
+        <button class="btn" type="button" id="btn-annot-export-bar" title="Export tree list CSV">匯出列表</button>
         <a class="btn" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="Open map PDF/image in a new tab">新分頁開啟地圖 PDF</a>
         <button class="btn" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換地圖</button>
         <button class="btn" type="button" id="btn-map-ref-clear">清除</button>
@@ -192,6 +207,31 @@
       </object>
       <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
       <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
+      <div id="map-annotate-layer" class="map-annotate-layer" aria-hidden="true"></div>
+      <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>
+        PDF 點擊較不準 — 建議改用 PNG／JPG 地圖加樹。仍可在此透明層放置標記（相對檢視框 %）。
+      </div>
+    </div>
+  </div>
+  <div class="annot-float-bar" id="annot-float-bar" hidden>
+    <button class="btn" type="button" id="btn-annot-mode-float" title="Add-tree mode">加樹模式</button>
+    <div class="annot-id-mode annot-id-mode-inline" role="group">
+      <button class="btn annot-seg on" type="button" data-id-mode="auto">自動編號</button>
+      <button class="btn annot-seg" type="button" data-id-mode="manual">手動編號</button>
+    </div>
+    <button class="btn" type="button" id="btn-annot-export-float">匯出列表</button>
+  </div>
+  <div class="annot-id-dialog" id="annot-id-dialog" hidden>
+    <div class="annot-id-dialog-card" role="dialog" aria-modal="true" aria-labelledby="annot-id-dialog-title">
+      <h3 id="annot-id-dialog-title">手動編號 Manual ID</h3>
+      <p class="hint">輸入樹木編號，然後放置標記。</p>
+      <label class="field">樹木編號 Tree ID
+        <input id="annot-id-input" type="text" autocomplete="off" placeholder="例如 T12 / A-01" />
+      </label>
+      <div class="annot-id-dialog-actions">
+        <button class="btn" type="button" id="btn-annot-id-cancel">取消</button>
+        <button class="btn btn-primary" type="button" id="btn-annot-id-ok">確定 Place</button>
+      </div>
     </div>
   </div>
   <div class="status" id="status">Starting…</div>
@@ -250,11 +290,11 @@
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=52"></script>
-  <script src="vendor/geopackage.min.js?v=52"></script>
-  <script src="vendor/xlsx.full.min.js?v=52"></script>
-  <script src="media.js?v=52"></script>
-  <script src="import-extras.js?v=52"></script>
-  <script src="app.js?v=52"></script>
+  <script src="vendor/leaflet.js?v=53"></script>
+  <script src="vendor/geopackage.min.js?v=53"></script>
+  <script src="vendor/xlsx.full.min.js?v=53"></script>
+  <script src="media.js?v=53"></script>
+  <script src="import-extras.js?v=53"></script>
+  <script src="app.js?v=53"></script>
 </body>
 </html>

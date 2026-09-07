@@ -1,5 +1,5 @@
 /**
- * Excel / CSV tree-list import + map PDF/image reference panel.
+ * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
  * Works without a GeoPackage. Hooks into window.GpkgViewer (set by app.js).
  */
 (function () {
@@ -31,12 +31,17 @@
   const Y_HINTS = ["y", "northing", "north", "hk_n", "hk1980_n", "北距"];
 
   const state = {
-    trees: [],          // { id, props, feature, hasCoords }
+    trees: [],          // { id, props, feature, hasCoords, x, y, annot, leafletMarker }
     sourceName: "",
     mapRefUrl: null,
     mapRefKind: null,   // "pdf" | "image"
     mapRefName: "",
-    objectUrls: []
+    objectUrls: [],
+    annotateMode: false,
+    idMode: "auto",     // "auto" | "manual"
+    pendingPlace: null, // { x, y, lat, lng, source }
+    leafletAnnotLayer: null,
+    leafletBound: false
   };
 
   function $(id) { return document.getElementById(id); }
@@ -327,6 +332,11 @@
     return { features: features, idCol: idCol, idColNote: resolved.note };
   }
 
+  function fmtXy(n) {
+    if (n == null || !isFinite(n)) return "—";
+    return Number(n).toFixed(1);
+  }
+
   function renderTreeList() {
     const box = $("tree-list");
     const panel = $("tree-list-panel");
@@ -337,14 +347,19 @@
       box.innerHTML = "";
       if (countEl) countEl.textContent = "";
       document.body.classList.remove("has-tree-list");
+      renderAnnotOverlay();
       return;
     }
     document.body.classList.add("has-tree-list");
     if (panel) panel.hidden = false;
     if (countEl) {
       const withCoords = state.trees.filter((t) => t.hasCoords).length;
-      countEl.textContent = state.trees.length + " 棵" +
-        (withCoords ? "（" + withCoords + " 有座標）" : "（無座標 — 請用清單選樹）");
+      const withXy = state.trees.filter((t) => t.x != null && t.y != null).length;
+      let extra = "";
+      if (withCoords) extra = "（" + withCoords + " 有座標）";
+      else if (withXy) extra = "（" + withXy + " 有 x／y）";
+      else extra = "（無座標 — 請用清單選樹）";
+      countEl.textContent = state.trees.length + " 棵" + extra;
     }
     const selected = (window.GpkgMedia && window.GpkgMedia.getState)
       ? window.GpkgMedia.getState().treeId
@@ -353,14 +368,23 @@
     state.trees.forEach((t) => {
       const sp = t.props.Species || t.props.species || "";
       const on = selected && String(selected).toUpperCase() === String(t.id).toUpperCase();
-      html += '<button type="button" class="tree-list-item' + (on ? " on" : "") + '" data-tree-id="' +
+      const xy = (t.x != null && t.y != null)
+        ? '<span class="tree-list-xy" title="Relative x/y %">x ' + fmtXy(t.x) + '% · y ' + fmtXy(t.y) + "%</span>"
+        : "";
+      html += '<div class="tree-list-row' + (on ? " on" : "") + '" data-tree-id="' + escapeHtml(t.id) + '">' +
+        '<button type="button" class="tree-list-item' + (on ? " on" : "") + '" data-tree-id="' +
         escapeHtml(t.id) + '">' +
         '<strong>' + escapeHtml(t.id) + '</strong>' +
         (sp ? '<span class="tree-list-sp">' + escapeHtml(String(sp)) + "</span>" : "") +
+        xy +
         (t.hasCoords ? '<span class="tree-list-pin" title="有座標">📍</span>' : "") +
-        "</button>";
+        "</button>" +
+        '<button type="button" class="tree-list-del" data-del-id="' + escapeHtml(t.id) +
+        '" title="刪除 Delete" aria-label="刪除 ' + escapeHtml(t.id) + '">✕</button>' +
+        "</div>";
     });
     box.innerHTML = html;
+    renderAnnotOverlay();
   }
 
   function selectTreeFromList(treeId) {
@@ -369,10 +393,17 @@
     // Highlight in list
     const box = $("tree-list");
     if (box) {
+      Array.prototype.forEach.call(box.querySelectorAll(".tree-list-row"), (el) => {
+        const on = String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase();
+        el.classList.toggle("on", on);
+        const btn = el.querySelector(".tree-list-item");
+        if (btn) btn.classList.toggle("on", on);
+      });
       Array.prototype.forEach.call(box.querySelectorAll(".tree-list-item"), (el) => {
         el.classList.toggle("on", String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase());
       });
     }
+    highlightAnnotMarker(treeId);
     if (window.GpkgViewer && typeof window.GpkgViewer.selectTreeById === "function") {
       window.GpkgViewer.selectTreeById(t.id, t.props);
     } else if (window.GpkgMedia) {
@@ -394,9 +425,20 @@
     document.body.classList.toggle("has-map-ref", show);
     const mapEl = $("map");
     if (mapEl) mapEl.classList.toggle("map-ref-active", show);
+    updateFloatBarVisibility(show);
+    updatePdfHint();
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
       setTimeout(() => window.GpkgViewer.invalidateMap(), 50);
     }
+  }
+
+  function updateFloatBarVisibility(mapRefShowing) {
+    const bar = $("annot-float-bar");
+    if (!bar) return;
+    // Show floating annotate bar on Leaflet when map-ref is not covering
+    const show = !mapRefShowing && (state.annotateMode || true);
+    // Always available when leaflet visible so user can turn on add-tree without map PDF
+    bar.hidden = !!mapRefShowing;
   }
 
   function hideMapRefViewers() {
@@ -480,7 +522,8 @@
     // (even if Leaflet demo trees / GPKG markers exist — toggle can switch back)
     document.body.classList.add("force-map-ref");
     updateMapRefVisibility();
-    setImportStatus("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet）", "ok");
+    renderAnnotOverlay();
+    setImportStatus("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」點擊加樹）", "ok");
   }
 
   function clearMapRef() {
@@ -488,6 +531,7 @@
     hideMapRefViewers();
     document.body.classList.remove("force-map-ref");
     updateMapRefVisibility();
+    renderAnnotOverlay();
     setImportStatus("已清除地圖參考", "");
   }
 
@@ -507,11 +551,17 @@
     const features = parsed.features;
 
     state.sourceName = file.name;
+    // Keep annotate-only trees that have map % coords if they aren't in the import? Spec: excel replaces list.
+    clearLeafletAnnotMarkers();
     state.trees = features.map((ft) => ({
       id: String((ft.properties && ft.properties["Tree ID"]) || ""),
       props: ft.properties || {},
       feature: ft,
-      hasCoords: !!(ft.geometry && ft.geometry.type === "Point")
+      hasCoords: !!(ft.geometry && ft.geometry.type === "Point"),
+      x: null,
+      y: null,
+      annot: false,
+      leafletMarker: null
     }));
 
     renderTreeList();
@@ -536,22 +586,423 @@
   function syncTreeListHighlight(treeId) {
     const box = $("tree-list");
     if (!box || !state.trees.length) return;
-    Array.prototype.forEach.call(box.querySelectorAll(".tree-list-item"), (el) => {
+    Array.prototype.forEach.call(box.querySelectorAll(".tree-list-row"), (el) => {
       const id = el.getAttribute("data-tree-id");
-      el.classList.toggle("on", treeId && String(id).toUpperCase() === String(treeId).toUpperCase());
+      const on = treeId && String(id).toUpperCase() === String(treeId).toUpperCase();
+      el.classList.toggle("on", on);
+      const btn = el.querySelector(".tree-list-item");
+      if (btn) btn.classList.toggle("on", on);
     });
+    highlightAnnotMarker(treeId);
   }
 
   function clearTreeList() {
+    clearLeafletAnnotMarkers();
     state.trees = [];
     state.sourceName = "";
     renderTreeList();
+  }
+
+  /* ---------- From-scratch annotate mode ---------- */
+
+  function existingIdSet() {
+    const s = {};
+    state.trees.forEach((t) => { s[String(t.id).toUpperCase()] = true; });
+    return s;
+  }
+
+  function nextAutoId() {
+    const used = existingIdSet();
+    let n = 1;
+    while (used["T" + n]) n += 1;
+    return "T" + n;
+  }
+
+  function setIdMode(mode) {
+    state.idMode = mode === "manual" ? "manual" : "auto";
+    Array.prototype.forEach.call(document.querySelectorAll(".annot-seg[data-id-mode]"), (btn) => {
+      btn.classList.toggle("on", btn.getAttribute("data-id-mode") === state.idMode);
+    });
+    updateAnnotUi();
+  }
+
+  function setAnnotateMode(on) {
+    state.annotateMode = !!on;
+    document.body.classList.toggle("annotate-mode", state.annotateMode);
+    Array.prototype.forEach.call(document.querySelectorAll("#btn-annot-mode, #btn-annot-mode-bar, #btn-annot-mode-float"), (btn) => {
+      if (!btn) return;
+      btn.classList.toggle("is-on", state.annotateMode);
+      if (btn.id === "btn-annot-mode") {
+        btn.textContent = state.annotateMode ? "加樹模式 · 開 ON" : "加樹模式 Add tree";
+      } else {
+        btn.textContent = state.annotateMode ? "加樹 · 開" : "加樹模式";
+      }
+    });
+    const layer = $("map-annotate-layer");
+    if (layer) {
+      layer.classList.toggle("active", state.annotateMode);
+      layer.setAttribute("aria-hidden", state.annotateMode ? "false" : "true");
+    }
+    updatePdfHint();
+    updateAnnotUi();
+    ensureLeafletAnnotBinding();
+    if (state.annotateMode) {
+      setImportStatus(
+        state.idMode === "manual"
+          ? "加樹模式（手動編號）：點地圖後輸入編號"
+          : "加樹模式（自動編號）：點地圖放置 T1、T2…",
+        "ok"
+      );
+    } else {
+      hideIdDialog();
+      state.pendingPlace = null;
+    }
+  }
+
+  function updatePdfHint() {
+    const hint = $("map-annotate-pdf-hint");
+    if (!hint) return;
+    const show = state.annotateMode && state.mapRefKind === "pdf" && document.body.classList.contains("has-map-ref");
+    hint.hidden = !show;
+  }
+
+  function updateAnnotUi() {
+    const hint = $("annot-hint");
+    if (hint) {
+      if (state.annotateMode) {
+        hint.textContent = state.idMode === "manual"
+          ? "手動編號：點地圖後輸入樹木 ID。座標以檢視框 % 記錄。"
+          : "自動編號：點地圖依序 T1、T2…（略過已有編號）。PNG／JPG 最佳。";
+      } else {
+        hint.textContent = "開啟「加樹模式」後，點地圖圖片或 Leaflet 放置樹木。PNG／JPG 地圖最合適。";
+      }
+    }
+  }
+
+  function pctFromEvent(el, clientX, clientY) {
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const x = ((clientX - rect.left) / rect.width) * 100;
+    const y = ((clientY - rect.top) / rect.height) * 100;
+    return {
+      x: Math.max(0, Math.min(100, x)),
+      y: Math.max(0, Math.min(100, y))
+    };
+  }
+
+  function beginPlace(place) {
+    if (state.idMode === "manual") {
+      state.pendingPlace = place;
+      showIdDialog();
+      return;
+    }
+    const id = nextAutoId();
+    commitPlace(id, place);
+  }
+
+  function commitPlace(id, place) {
+    id = String(id || "").trim();
+    if (!id) {
+      setImportStatus("請輸入樹木編號", "warn");
+      return false;
+    }
+    if (existingIdSet()[id.toUpperCase()]) {
+      setImportStatus("編號已存在：" + id, "warn");
+      return false;
+    }
+    const x = place && place.x != null ? Number(place.x) : null;
+    const y = place && place.y != null ? Number(place.y) : null;
+    const props = {
+      "Tree ID": id,
+      x: x != null ? Number(x.toFixed(2)) : "",
+      y: y != null ? Number(y.toFixed(2)) : "",
+      Source: "annotate"
+    };
+    let geometry = null;
+    let hasCoords = false;
+    if (place && place.lat != null && place.lng != null && isFinite(place.lat) && isFinite(place.lng)) {
+      geometry = { type: "Point", coordinates: [place.lng, place.lat] };
+      hasCoords = true;
+      props.Latitude = place.lat;
+      props.Longitude = place.lng;
+    }
+    const feature = { type: "Feature", properties: props, geometry: geometry };
+    const tree = {
+      id: id,
+      props: props,
+      feature: feature,
+      hasCoords: hasCoords,
+      x: x,
+      y: y,
+      annot: true,
+      leafletMarker: null,
+      source: (place && place.source) || "map-ref"
+    };
+    if (hasCoords) {
+      tree.leafletMarker = addLeafletAnnotMarker(tree);
+    }
+    state.trees.push(tree);
+    if (!state.sourceName) state.sourceName = "annotate";
+    renderTreeList();
+    selectTreeFromList(id);
+    setImportStatus("已加樹 " + id + (x != null ? (" · x " + fmtXy(x) + "% y " + fmtXy(y) + "%") : ""), "ok");
+    return true;
+  }
+
+  function addLeafletAnnotMarker(tree) {
+    try {
+      const map = window.GpkgViewer && window.GpkgViewer.getMap && window.GpkgViewer.getMap();
+      if (!map || typeof L === "undefined") return null;
+      ensureLeafletAnnotLayer(map);
+      const ll = L.latLng(tree.feature.geometry.coordinates[1], tree.feature.geometry.coordinates[0]);
+      const marker = L.circleMarker(ll, {
+        radius: 7,
+        color: "#fbbf24",
+        weight: 2,
+        fillColor: "#f59e0b",
+        fillOpacity: 0.9,
+        className: "annot-leaflet-marker"
+      });
+      marker.bindTooltip(String(tree.id), { permanent: true, direction: "top", offset: [0, -8], className: "annot-leaflet-label" });
+      marker.feature = tree.feature;
+      marker.on("click", function (e) {
+        if (typeof L !== "undefined" && L.DomEvent) L.DomEvent.stopPropagation(e);
+        selectTreeFromList(tree.id);
+      });
+      marker.addTo(state.leafletAnnotLayer);
+      return marker;
+    } catch (err) {
+      console.warn(err);
+      return null;
+    }
+  }
+
+  function ensureLeafletAnnotLayer(map) {
+    if (state.leafletAnnotLayer) return;
+    state.leafletAnnotLayer = L.layerGroup().addTo(map);
+  }
+
+  function clearLeafletAnnotMarkers() {
+    state.trees.forEach((t) => {
+      if (t.leafletMarker && state.leafletAnnotLayer) {
+        try { state.leafletAnnotLayer.removeLayer(t.leafletMarker); } catch (e) { /* ignore */ }
+      }
+      t.leafletMarker = null;
+    });
+  }
+
+  function ensureLeafletAnnotBinding() {
+    if (state.leafletBound) return;
+    const map = window.GpkgViewer && window.GpkgViewer.getMap && window.GpkgViewer.getMap();
+    if (!map) return;
+    state.leafletBound = true;
+    ensureLeafletAnnotLayer(map);
+  }
+
+  function handleLeafletClick(e) {
+    if (!state.annotateMode) return false;
+    const map = window.GpkgViewer && window.GpkgViewer.getMap && window.GpkgViewer.getMap();
+    if (!map || !e) return false;
+    const container = map.getContainer();
+    let pct = null;
+    if (e.containerPoint && container) {
+      const w = container.clientWidth || 1;
+      const h = container.clientHeight || 1;
+      pct = {
+        x: Math.max(0, Math.min(100, (e.containerPoint.x / w) * 100)),
+        y: Math.max(0, Math.min(100, (e.containerPoint.y / h) * 100))
+      };
+    } else if (e.originalEvent) {
+      pct = pctFromEvent(container, e.originalEvent.clientX, e.originalEvent.clientY);
+    }
+    if (!pct) return false;
+    beginPlace({
+      x: pct.x,
+      y: pct.y,
+      lat: e.latlng ? e.latlng.lat : null,
+      lng: e.latlng ? e.latlng.lng : null,
+      source: "leaflet"
+    });
+    return true;
+  }
+
+  function handleOverlayClick(e) {
+    if (!state.annotateMode) return;
+    const layer = $("map-annotate-layer");
+    if (!layer) return;
+    // Ignore clicks on existing markers (select instead)
+    const hit = e.target && e.target.closest && e.target.closest(".annot-marker");
+    if (hit) {
+      const tid = hit.getAttribute("data-tree-id");
+      if (tid) selectTreeFromList(tid);
+      return;
+    }
+    const pct = pctFromEvent(layer, e.clientX, e.clientY);
+    if (!pct) return;
+    beginPlace({ x: pct.x, y: pct.y, lat: null, lng: null, source: "map-ref" });
+  }
+
+  function renderAnnotOverlay() {
+    const layer = $("map-annotate-layer");
+    if (!layer) return;
+    let html = "";
+    state.trees.forEach((t) => {
+      if (t.x == null || t.y == null) return;
+      // Only show overlay markers for map-ref annotations (or all — useful when map-ref visible)
+      html += '<button type="button" class="annot-marker" data-tree-id="' + escapeHtml(t.id) +
+        '" style="left:' + Number(t.x).toFixed(3) + "%;top:" + Number(t.y).toFixed(3) + '%" title="' +
+        escapeHtml(t.id) + '">' +
+        '<span class="annot-marker-dot"></span>' +
+        '<span class="annot-marker-label">' + escapeHtml(t.id) + "</span>" +
+        "</button>";
+    });
+    layer.innerHTML = html;
+    const selected = (window.GpkgMedia && window.GpkgMedia.getState)
+      ? window.GpkgMedia.getState().treeId
+      : null;
+    if (selected) highlightAnnotMarker(selected);
+  }
+
+  function highlightAnnotMarker(treeId) {
+    const layer = $("map-annotate-layer");
+    if (!layer) return;
+    Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
+      el.classList.toggle("on", treeId && String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase());
+    });
+  }
+
+  function deleteTree(treeId) {
+    const idx = state.trees.findIndex((t) => String(t.id).toUpperCase() === String(treeId).toUpperCase());
+    if (idx < 0) return;
+    const t = state.trees[idx];
+    if (t.leafletMarker && state.leafletAnnotLayer) {
+      try { state.leafletAnnotLayer.removeLayer(t.leafletMarker); } catch (e) { /* ignore */ }
+    }
+    state.trees.splice(idx, 1);
+    renderTreeList();
+    if (window.GpkgMedia && window.GpkgMedia.getState && String(window.GpkgMedia.getState().treeId || "").toUpperCase() === String(treeId).toUpperCase()) {
+      window.GpkgMedia.setSelectedTree(null, null);
+    }
+    setImportStatus("已刪除 " + treeId, "");
+  }
+
+  function exportTreeListCsv() {
+    if (!state.trees.length) {
+      setImportStatus("清單是空的，無可匯出", "warn");
+      return;
+    }
+    const lines = ["Tree ID,x,y,Latitude,Longitude,Source"];
+    state.trees.forEach((t) => {
+      const id = String(t.id).replace(/"/g, '""');
+      const x = t.x != null ? Number(t.x).toFixed(2) : "";
+      const y = t.y != null ? Number(t.y).toFixed(2) : "";
+      const lat = t.props && t.props.Latitude != null ? t.props.Latitude : "";
+      const lng = t.props && t.props.Longitude != null ? t.props.Longitude : "";
+      const src = (t.source || (t.annot ? "annotate" : "import")).replace(/"/g, '""');
+      lines.push('"' + id + '",' + x + "," + y + "," + lat + "," + lng + ',"' + src + '"');
+    });
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (state.sourceName ? String(state.sourceName).replace(/\.[^.]+$/, "") : "trees") + "_annotate.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ } }, 1500);
+    setImportStatus("已匯出 CSV（" + state.trees.length + " 棵）", "ok");
+  }
+
+  function showIdDialog() {
+    const dlg = $("annot-id-dialog");
+    const input = $("annot-id-input");
+    if (!dlg) return;
+    dlg.hidden = false;
+    if (input) {
+      input.value = nextAutoId();
+      setTimeout(() => { input.focus(); input.select(); }, 30);
+    }
+  }
+
+  function hideIdDialog() {
+    const dlg = $("annot-id-dialog");
+    if (dlg) dlg.hidden = true;
+    state.pendingPlace = null;
+  }
+
+  function confirmIdDialog() {
+    const input = $("annot-id-input");
+    const id = input ? input.value : "";
+    const place = state.pendingPlace;
+    if (!place) {
+      hideIdDialog();
+      return;
+    }
+    const ok = commitPlace(id, place);
+    if (ok) {
+      state.pendingPlace = null;
+      const dlg = $("annot-id-dialog");
+      if (dlg) dlg.hidden = true;
+    }
+  }
+
+  function initAnnotControls() {
+    function toggleMode() {
+      setAnnotateMode(!state.annotateMode);
+    }
+    ["btn-annot-mode", "btn-annot-mode-bar", "btn-annot-mode-float"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("click", toggleMode);
+    });
+    document.addEventListener("click", (e) => {
+      const seg = e.target.closest && e.target.closest(".annot-seg[data-id-mode]");
+      if (!seg) return;
+      setIdMode(seg.getAttribute("data-id-mode"));
+    });
+    ["btn-annot-export", "btn-annot-export-bar", "btn-annot-export-float"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("click", exportTreeListCsv);
+    });
+
+    const layer = $("map-annotate-layer");
+    if (layer) {
+      layer.addEventListener("click", handleOverlayClick);
+    }
+
+    const ok = $("btn-annot-id-ok");
+    const cancel = $("btn-annot-id-cancel");
+    const input = $("annot-id-input");
+    if (ok) ok.addEventListener("click", confirmIdDialog);
+    if (cancel) cancel.addEventListener("click", hideIdDialog);
+    if (input) {
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); confirmIdDialog(); }
+        if (e.key === "Escape") { e.preventDefault(); hideIdDialog(); }
+      });
+    }
+    const dlg = $("annot-id-dialog");
+    if (dlg) {
+      dlg.addEventListener("click", (e) => {
+        if (e.target === dlg) hideIdDialog();
+      });
+    }
+
+    setIdMode("auto");
+    setAnnotateMode(false);
+    updateFloatBarVisibility(document.body.classList.contains("has-map-ref"));
   }
 
   function init() {
     const treeBox = $("tree-list");
     if (treeBox) {
       treeBox.addEventListener("click", (e) => {
+        const del = e.target.closest(".tree-list-del");
+        if (del) {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteTree(del.getAttribute("data-del-id"));
+          return;
+        }
         const btn = e.target.closest(".tree-list-item");
         if (!btn) return;
         selectTreeFromList(btn.getAttribute("data-tree-id"));
@@ -598,12 +1049,18 @@
       });
     }
 
+    initAnnotControls();
+
     // Re-evaluate visibility when vectors change (poll light)
-    setInterval(updateMapRefVisibility, 1500);
+    setInterval(function () {
+      updateMapRefVisibility();
+      ensureLeafletAnnotBinding();
+    }, 1500);
   }
 
   function setTrees(trees, sourceName) {
-    state.trees = trees || [];
+    clearLeafletAnnotMarkers();
+    state.trees = (trees || []).map((t) => Object.assign({ x: null, y: null, annot: false, leafletMarker: null }, t));
     state.sourceName = sourceName || "";
     renderTreeList();
   }
@@ -618,7 +1075,11 @@
     syncTreeListHighlight: syncTreeListHighlight,
     updateMapRefVisibility: updateMapRefVisibility,
     getTrees: function () { return state.trees.slice(); },
-    getState: function () { return state; }
+    getState: function () { return state; },
+    isAnnotateMode: function () { return !!state.annotateMode; },
+    setAnnotateMode: setAnnotateMode,
+    handleLeafletClick: handleLeafletClick,
+    exportTreeListCsv: exportTreeListCsv
   };
 
   if (document.readyState === "loading") {

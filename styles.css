@@ -1204,3 +1204,238 @@ body.has-map-ref .status {
     max-height: 160px;
   }
 }
+
+/* ---- From-scratch tree annotate mode ---- */
+.annot-controls {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.annot-id-mode {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.annot-id-mode .annot-seg {
+  flex: 1;
+  border-radius: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  margin: 0;
+  background: var(--panel-2);
+  font-size: 12px;
+  padding: 7px 6px;
+}
+.annot-id-mode .annot-seg:last-child {
+  border-right: 0;
+}
+.annot-id-mode .annot-seg.on,
+.annot-id-mode .annot-seg.is-on {
+  background: rgba(91, 140, 255, 0.28);
+  color: #e8eeff;
+  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.45);
+}
+#btn-annot-mode.is-on,
+#btn-annot-mode-bar.is-on,
+#btn-annot-mode-float.is-on {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: rgba(245, 158, 11, 0.7);
+  color: #fef3c7;
+}
+.annot-id-mode-inline {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.annot-id-mode-inline .annot-seg {
+  padding: 5px 8px;
+  font-size: 11px;
+  min-height: 0;
+}
+
+.map-annotate-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+.map-annotate-layer.active {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+body.annotate-mode #map {
+  cursor: crosshair;
+}
+body.annotate-mode.has-map-ref #map {
+  cursor: default;
+}
+
+.annot-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: auto;
+}
+.annot-marker-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 2px solid #fef3c7;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.annot-marker-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0a0f1c;
+  background: #fbbf24;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.annot-marker.on .annot-marker-dot {
+  background: #3b82f6;
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.55);
+}
+.annot-marker.on .annot-marker-label {
+  background: #60a5fa;
+  color: #0b1220;
+}
+
+.map-annotate-pdf-hint {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+.map-annotate-pdf-hint[hidden] {
+  display: none !important;
+}
+
+.annot-float-bar {
+  position: absolute;
+  z-index: 850;
+  top: 58px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: min(520px, calc(100% - 24px));
+  padding: 6px;
+  background: rgba(18, 25, 43, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.annot-float-bar[hidden] {
+  display: none !important;
+}
+body.has-map-ref .annot-float-bar {
+  display: none !important;
+}
+
+.annot-id-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(5, 8, 16, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.annot-id-dialog[hidden] {
+  display: none !important;
+}
+.annot-id-dialog-card {
+  width: min(360px, 100%);
+  background: #151c30;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.annot-id-dialog-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.annot-id-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tree-list-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.tree-list-row.on .tree-list-item {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
+  background: rgba(91, 140, 255, 0.14);
+}
+.tree-list-row .tree-list-item {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.tree-list-xy {
+  font-size: 11px;
+  color: #93c5fd;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tree-list-del {
+  flex: 0 0 auto;
+  width: 36px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: #fca5a5;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+.tree-list-del:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.annot-leaflet-label {
+  background: #fbbf24 !important;
+  border: 0 !important;
+  color: #0a0f1c !important;
+  font-weight: 700 !important;
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.annot-leaflet-label::before {
+  border-top-color: #fbbf24 !important;
+}

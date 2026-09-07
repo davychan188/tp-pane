@@ -6,7 +6,7 @@
 - 檔案只在瀏覽器本機讀取，不上傳
 - 適合 **iPad mini 橫向**：左半地圖／屬性，右半媒體
 - 相片按樹木編號配對（例如 `T1` → `T1_*.jpg`）
-- **無需 GPKG** 亦可：匯入 Excel 清單＋地圖 PDF＋媒體資料夾
+- **無需 GPKG** 亦可：匯入 Excel 清單＋地圖 PDF＋媒體資料夾，或 **從零加樹**（點地圖標註）
 - 示範模式仍可一鍵試 UI
 
 ## 系統需求
@@ -74,6 +74,25 @@ http://127.0.0.1:8765/?demo=1
 | `samples/media/` | 示範相片與調查 PDF |
 | `templates/Tree Inventory Template.xlsx` | 目錄匯出範本（上游） |
 
+### 從零加樹（地圖點擊標註 · Annotate）
+
+適合幾乎沒有原始清單／座標時：先匯入地圖圖片，再開「加樹模式」在圖上點出樹木。
+
+1. **匯入地圖**（建議 **PNG／JPG**；PDF 可顯示但點擊較不準，會用透明層相對檢視框記錄位置）
+2. 開啟 **加樹模式 Add tree**（側欄、地圖工具列，或 Leaflet 左上浮動列）
+3. 選擇編號方式：
+   - **自動編號 Auto**：點一下地圖 → `T1`、`T2`、`T3`…（略過已有編號）
+   - **手動編號 Manual**：點一下後跳出輸入框，輸入自訂 ID 再放置
+4. 左側 **樹木清單** 顯示每棵樹的 **x／y（相對檢視框 %）**；可點選、可 ✕ 刪除；無需相片亦可
+5. **匯出列表 Export CSV**：下載 `Tree ID,x,y,Latitude,Longitude,Source`
+6. 之後仍可再匯入媒體資料夾，依檔名前綴配對相片
+
+技術備註：
+
+- `#map-annotate-layer` 透明層覆蓋 `#map-ref-viewer`，座標以 overlay 百分比（0–100）儲存
+- Leaflet 可見時亦可點地圖加樹（同時記錄 lat／lng 與容器 %）
+- 不需 GPKG、不需 Excel、不需相片即可使用；既有 Excel／媒體／GPKG／示範流程不受影響
+
 ### Excel 解析說明
 
 - 瀏覽器內使用 **SheetJS（xlsx）**：已放到 `vendor/xlsx.full.min.js`，可離線使用  
@@ -124,7 +143,7 @@ gpkg-viewer-media/
   index.html                        畫面（含媒體面板、匯入按鈕）
   app.js                            地圖／GPKG 引擎＋Excel 圖層載入
   media.js                          相片／PDF 面板與配對邏輯
-  import-extras.js                  Excel／CSV 解析＋樹木清單＋地圖 PDF
+  import-extras.js                  Excel／CSV 解析＋樹木清單＋地圖 PDF＋加樹標註
   styles.css                        含 iPad 左右分欄
   samples/                          示範 GPKG／CSV／媒體
   templates/                        目錄 Excel 範本
@@ -137,7 +156,7 @@ gpkg-viewer-media/
 |---|---|
 | 佈局 | 新增右側媒體欄；橫向約 50/50 |
 | 選樹 | `selectMarker` → `GpkgMedia.setSelectedTree` |
-| 無 GPKG | **匯入 Excel**、**匯入地圖 PDF**、樹木清單 |
+| 無 GPKG | **匯入 Excel**、**匯入地圖 PDF**、樹木清單、**加樹模式**（自動／手動編號＋x／y） |
 | 示範 | 無需 GPKG 的 demo trees + 內建媒體 |
 | UI 文案 | 中英對照（繁體中文為主） |
 | 啟動 | 仍用 Python 本機伺服器（同上游） |
@@ -146,6 +165,7 @@ gpkg-viewer-media/
 
 - PDF 多頁跳轉依賴瀏覽器內建 PDF 檢視（`#page=`）；部分流動瀏覽器預覽較弱
 - 地圖參考 PDF 以 `<object>`／`<embed>`（＋ iframe 後備）顯示；Safari 可改用「新分頁開啟」（MVP，不另加 pdf.js）
+- 加樹模式對 **PNG／JPG** 最準；PDF 改以透明 overlay 記錄相對 %（非 PDF 頁面座標）
 - HEIC 等格式視系統／瀏覽器支援而定；建議 JPG／PNG
 - 大型 GPKG 仍受上游「圖徵上限」影響（預設 25,000）
 - 無寫入上游 repo；請在此資料夾自行備份／發佈

@@ -1282,7 +1282,11 @@
     map.dragging.enable();
   }
   map.on("mouseup", finishDrag);
-  map.on("click", function () {
+  map.on("click", function (e) {
+    if (window.GpkgImport && typeof window.GpkgImport.isAnnotateMode === "function" && window.GpkgImport.isAnnotateMode()) {
+      if (window.GpkgImport.handleLeafletClick) window.GpkgImport.handleLeafletClick(e);
+      return;
+    }
     if (state.moveMode || draggingMarker || dragMoved) return;
     selectMarker(null);
   });
@@ -2839,7 +2843,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=52").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=53").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
