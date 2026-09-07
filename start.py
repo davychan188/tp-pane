@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch the GeoPackage Viewer · 樹木媒體 on a local HTTP server.
+"""Launch tp-pane on a local HTTP server.
 
 GeoPackage WASM cannot reliably load from file:// URLs, so a tiny
 local server is required. Nothing is sent off this machine.
@@ -63,7 +63,7 @@ def lan_addresses():
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="GeoPackage Viewer · 樹木媒體")
+    parser = argparse.ArgumentParser(description="tp-pane")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
@@ -76,7 +76,7 @@ def main() -> int:
 
     local = f"http://127.0.0.1:{port}/"
     print("=" * 60)
-    print("  GeoPackage Viewer · 樹木媒體")
+    print("  tp-pane")
     print(f"  This computer: {local}")
     for ip in lan_addresses():
         print(f"  Phone on same Wi-Fi: http://{ip}:{port}/")

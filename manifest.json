@@ -1,7 +1,7 @@
 {
-  "name": "GeoPackage Viewer · 樹木媒體",
-  "short_name": "GPKG Media",
-  "description": "離線 GeoPackage 檢視器，附樹木相片／PDF 面板。檔案只留本機。",
+  "name": "tp-pane",
+  "short_name": "tp-pane",
+  "description": "tp-pane — 離線 GeoPackage／樹木相片／PDF 面板。檔案只留本機。",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

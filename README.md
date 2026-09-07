@@ -1,4 +1,4 @@
-# GeoPackage Viewer · 樹木媒體面板（tp-pane）
+# tp-pane
 
 離線 GeoPackage（`.gpkg`）／Excel 樹木清單檢視器，專為園藝／樹木調查工作流而設：**地圖（或地圖 PDF）＋屬性＋直放相片＋PDF 頁碼**。  
 改編自上游 [hugoleung04/gpkg-viewer](https://github.com/hugoleung04/gpkg-viewer)（本機無寫入上游權限；此資料夾為獨立 fork）。
