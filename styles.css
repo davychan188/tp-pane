@@ -908,7 +908,7 @@ body.media-layout.table-collapsed .feature-attrs {
   display: flex;
   align-items: center;
   justify-content: center;
-  touch-action: pan-y;
+  touch-action: none; /* pinch / pan handled in JS; swipe when not zoomed */
 }
 .media-frame {
   width: min(56%, 280px);
@@ -924,6 +924,7 @@ body.media-layout.table-collapsed .feature-attrs {
   justify-content: center;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   position: relative;
+  touch-action: none;
 }
 .media-frame img {
   width: 100%;
@@ -931,6 +932,14 @@ body.media-layout.table-collapsed .feature-attrs {
   object-fit: contain;
   background: #000;
   display: block;
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+.media-viewer.is-zoomed .media-frame img {
+  pointer-events: auto;
 }
 .media-slide {
   width: 100%;
@@ -1004,13 +1013,58 @@ body.media-layout.table-collapsed .feature-attrs {
   align-items: center;
   margin-bottom: 8px;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .media-pdf-head h2 { font-size: 14px; }
+.media-pdf-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .media-page-now {
   font-size: 13px;
   font-weight: 700;
   color: #93c5fd;
   white-space: nowrap;
+}
+.media-pdf-open-tab {
+  text-decoration: none;
+  color: inherit;
+  font-size: 12px;
+  padding: 8px 10px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.media-pdf-scroll {
+  margin-top: 8px;
+  width: 100%;
+  height: 160px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0a0f1c;
+  position: relative;
+  touch-action: pan-x pan-y;
+}
+.media-pdf-scroll[hidden] {
+  display: none !important;
+}
+.media-pdf-stage {
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.media-pdf-frame {
+  width: 100%;
+  height: 150px;
+  border: 0;
+  background: #0a0f1c;
+  display: block;
 }
 .media-nums {
   display: flex;
@@ -1037,14 +1091,6 @@ body.media-layout.table-collapsed .feature-attrs {
   border-color: var(--accent);
   background: rgba(91, 140, 255, 0.18);
   color: #93c5fd;
-}
-.media-pdf-frame {
-  width: 100%;
-  height: 120px;
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #0a0f1c;
 }
 
 #btn-pick-media {
@@ -1244,6 +1290,16 @@ body:not(.media-layout) .feature-attrs { display: none; }
   display: flex;
   flex-direction: column;
   background: #0a0f1c;
+  overflow: hidden;
+}
+.map-ref-zoom-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  transform-origin: center center;
+  will-change: transform;
+  touch-action: none;
 }
 .map-ref-frame,
 .map-ref-img,
@@ -1540,4 +1596,65 @@ body.has-map-ref .annot-float-bar {
 }
 .annot-leaflet-label::before {
   border-top-color: #fbbf24 !important;
+}
+
+
+/* ---- Shared zoom controls (photos / PDF / map-ref) · iPad-friendly ---- */
+.zoom-ctrls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.zoom-btn {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(24, 32, 56, 0.92);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.zoom-btn:active {
+  transform: scale(0.96);
+  background: rgba(91, 140, 255, 0.28);
+}
+.zoom-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.media-zoom-ctrls {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: rgba(10, 15, 28, 0.55);
+  border-radius: 14px;
+  padding: 4px;
+  backdrop-filter: blur(6px);
+}
+.map-ref-zoom-ctrls .zoom-btn {
+  background: var(--panel-2);
+}
+@media (max-width: 1180px) and (orientation: landscape) {
+  .map-ref-zoom-ctrls .zoom-btn {
+    min-width: 40px;
+    min-height: 40px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
 }

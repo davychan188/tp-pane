@@ -54,8 +54,17 @@
     pdfTotal: 20,
     relatedPages: [],
     demoMode: true,
-    objectUrls: []
+    objectUrls: [],
+    photoZoom: { scale: 1, x: 0, y: 0 },
+    pdfZoom: 1
   };
+
+  const PHOTO_ZOOM_MIN = 1;
+  const PHOTO_ZOOM_MAX = 4;
+  const PHOTO_ZOOM_STEP = 0.35;
+  const PDF_ZOOM_MIN = 1;
+  const PDF_ZOOM_MAX = 3;
+  const PDF_ZOOM_STEP = 0.25;
 
   function $(id) { return document.getElementById(id); }
 
@@ -107,6 +116,84 @@
     if (el) el.textContent = msg || "";
   }
 
+
+  function clamp(n, lo, hi) {
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function applyPhotoZoom() {
+    const img = $("media-img");
+    const viewer = $("media-viewer");
+    const z = state.photoZoom;
+    if (img) {
+      img.style.transform = "translate(" + z.x.toFixed(1) + "px," + z.y.toFixed(1) + "px) scale(" + z.scale.toFixed(3) + ")";
+    }
+    if (viewer) viewer.classList.toggle("is-zoomed", z.scale > 1.01);
+    const resetBtn = $("media-zoom-reset");
+    if (resetBtn) resetBtn.textContent = z.scale <= 1.01 ? "1×" : (Math.round(z.scale * 10) / 10) + "×";
+  }
+
+  function resetPhotoZoom() {
+    state.photoZoom.scale = 1;
+    state.photoZoom.x = 0;
+    state.photoZoom.y = 0;
+    applyPhotoZoom();
+  }
+
+  function setPhotoZoom(scale, cx, cy) {
+    const z = state.photoZoom;
+    const prev = z.scale;
+    const next = clamp(scale, PHOTO_ZOOM_MIN, PHOTO_ZOOM_MAX);
+    if (next <= 1.01) {
+      resetPhotoZoom();
+      return;
+    }
+    // Keep point under (cx,cy) roughly stable when scaling from buttons (optional)
+    if (cx != null && cy != null && prev > 0) {
+      const ratio = next / prev;
+      z.x = cx - (cx - z.x) * ratio;
+      z.y = cy - (cy - z.y) * ratio;
+    }
+    z.scale = next;
+    applyPhotoZoom();
+  }
+
+  function stepPhotoZoom(dir) {
+    setPhotoZoom(state.photoZoom.scale + dir * PHOTO_ZOOM_STEP);
+  }
+
+  function applyPdfZoom() {
+    const stage = $("media-pdf-stage");
+    const scroll = $("media-pdf-scroll");
+    const frame = $("media-pdf-frame");
+    const s = state.pdfZoom;
+    if (stage && frame) {
+      const baseW = (scroll && scroll.clientWidth) ? scroll.clientWidth : (stage.clientWidth || 280);
+      const baseH = 150;
+      frame.style.width = baseW + "px";
+      frame.style.height = baseH + "px";
+      stage.style.transformOrigin = "0 0";
+      stage.style.transform = "scale(" + s.toFixed(3) + ")";
+      // Layout box stays base size; margins extend scrollable area to match visual scale
+      stage.style.width = baseW + "px";
+      stage.style.height = baseH + "px";
+      stage.style.marginRight = (baseW * (s - 1)) + "px";
+      stage.style.marginBottom = (baseH * (s - 1)) + "px";
+    }
+    const resetBtn = $("media-pdf-zoom-reset");
+    if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
+  }
+
+  function resetPdfZoom() {
+    state.pdfZoom = 1;
+    applyPdfZoom();
+  }
+
+  function stepPdfZoom(dir) {
+    state.pdfZoom = clamp(state.pdfZoom + dir * PDF_ZOOM_STEP, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+    applyPdfZoom();
+  }
+
   function renderPhoto() {
     const list = photosForTree(state.treeId);
     const slide = $("media-slide");
@@ -115,10 +202,11 @@
     const pcnt = $("media-pcnt");
     const empty = $("media-empty");
     const viewer = $("media-viewer");
+    resetPhotoZoom();
 
     if (!list.length) {
       if (slide) slide.hidden = true;
-      if (img) { img.hidden = true; img.removeAttribute("src"); }
+      if (img) { img.hidden = true; img.removeAttribute("src"); img.style.transform = ""; }
       if (empty) {
         empty.hidden = false;
         empty.textContent = state.treeId
@@ -162,6 +250,10 @@
     if (!pages.length) {
       if (pageNow) pageNow.textContent = state.treeId ? "此樹暫無 PDF 頁" : "—";
       if (pdfTitle) pdfTitle.textContent = "相關 PDF";
+      const scroll = $("media-pdf-scroll");
+      const openTab = $("media-pdf-open-tab");
+      if (scroll) scroll.hidden = true;
+      if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
       return;
     }
 
@@ -188,11 +280,22 @@
     state.pdfPage = n;
     renderPdfChips();
     const frame = $("media-pdf-frame");
+    const scroll = $("media-pdf-scroll");
+    const openTab = $("media-pdf-open-tab");
     const pdf = state.pdfs[0];
     if (frame && pdf && pdf.url) {
-      frame.hidden = false;
+      if (scroll) scroll.hidden = false;
       // PDF open parameters: page via hash (works in many browsers)
       frame.src = pdf.url + "#page=" + n;
+      if (openTab) {
+        openTab.hidden = false;
+        openTab.href = pdf.url + "#page=" + n;
+        openTab.setAttribute("download", pdf.name || "report.pdf");
+      }
+      applyPdfZoom();
+    } else {
+      if (scroll) scroll.hidden = true;
+      if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
     }
     setStatusHint("PDF 跳至第 " + n + " 頁" + (pdf ? "" : "（示範）"));
   }
@@ -451,6 +554,7 @@
     if (hint) hint.textContent = id ? ("已選 " + id) : "未選樹木";
 
     renderFeatureAttrs(useProps || null, id);
+    resetPdfZoom();
     renderPhoto();
     updatePdfForTree(id);
   }
@@ -562,27 +666,155 @@
     }
   }
 
-  function bindSwipe(viewer) {
-    if (!viewer) return;
-    let x0 = null;
+  function bindPhotoGestures(viewer) {
+    if (!viewer || viewer._photoZoomBound) return;
+    viewer._photoZoomBound = true;
+    const frame = $("media-frame") || viewer;
+
+    let swipeX0 = null;
+    let swipeY0 = null;
+    let pan = null; // { x0, y0, ox, oy }
+    let pinch = null; // { dist, scale, x, y }
+    let lastTap = 0;
+    let moved = false;
+
+    function touchDist(a, b) {
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.hypot(dx, dy) || 1;
+    }
+
+    function midPoint(a, b) {
+      return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    }
+
     viewer.addEventListener("touchstart", (e) => {
-      if (!e.changedTouches || !e.changedTouches[0]) return;
-      x0 = e.changedTouches[0].clientX;
-    }, { passive: true });
+      if (!e.touches || !e.touches.length) return;
+      moved = false;
+      if (e.touches.length === 2) {
+        swipeX0 = null;
+        pan = null;
+        const d = touchDist(e.touches[0], e.touches[1]);
+        pinch = { dist: d, scale: state.photoZoom.scale, x: state.photoZoom.x, y: state.photoZoom.y };
+        e.preventDefault();
+        return;
+      }
+      pinch = null;
+      const t = e.touches[0];
+      swipeX0 = t.clientX;
+      swipeY0 = t.clientY;
+      if (state.photoZoom.scale > 1.01) {
+        pan = { x0: t.clientX, y0: t.clientY, ox: state.photoZoom.x, oy: state.photoZoom.y };
+      } else {
+        pan = null;
+      }
+    }, { passive: false });
+
+    viewer.addEventListener("touchmove", (e) => {
+      if (!e.touches) return;
+      if (e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        moved = true;
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const next = clamp(pinch.scale * (d / pinch.dist), PHOTO_ZOOM_MIN, PHOTO_ZOOM_MAX);
+        state.photoZoom.scale = next;
+        if (next <= 1.01) {
+          state.photoZoom.x = 0;
+          state.photoZoom.y = 0;
+        } else {
+          // mild pan from mid-point delta
+          const mid = midPoint(e.touches[0], e.touches[1]);
+          // keep existing translate; pinch mainly scales
+          state.photoZoom.x = pinch.x;
+          state.photoZoom.y = pinch.y;
+        }
+        applyPhotoZoom();
+        return;
+      }
+      if (pan && e.touches.length === 1 && state.photoZoom.scale > 1.01) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const dx = t.clientX - pan.x0;
+        const dy = t.clientY - pan.y0;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        state.photoZoom.x = pan.ox + dx;
+        state.photoZoom.y = pan.oy + dy;
+        applyPhotoZoom();
+      }
+    }, { passive: false });
+
     viewer.addEventListener("touchend", (e) => {
-      if (x0 == null || !e.changedTouches || !e.changedTouches[0]) return;
-      const dx = e.changedTouches[0].clientX - x0;
-      if (Math.abs(dx) > 40) stepPhoto(dx < 0 ? 1 : -1);
-      x0 = null;
-    }, { passive: true });
-    // mouse drag for desktop testing
+      if (pinch && (!e.touches || e.touches.length < 2)) {
+        pinch = null;
+        if (state.photoZoom.scale <= 1.01) resetPhotoZoom();
+      }
+      if (pan && (!e.touches || e.touches.length === 0)) pan = null;
+
+      // Swipe next/prev only when not zoomed (before double-tap)
+      if (state.photoZoom.scale <= 1.01 && swipeX0 != null && e.changedTouches && e.changedTouches[0]) {
+        const dx = e.changedTouches[0].clientX - swipeX0;
+        const dy = e.changedTouches[0].clientY - (swipeY0 == null ? e.changedTouches[0].clientY : swipeY0);
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+          moved = true;
+          stepPhoto(dx < 0 ? 1 : -1);
+          lastTap = 0;
+        }
+      }
+
+      // Double-tap zoom
+      if ((!e.touches || e.touches.length === 0) && e.changedTouches && e.changedTouches[0] && !moved) {
+        const now = Date.now();
+        if (now - lastTap < 320) {
+          lastTap = 0;
+          if (state.photoZoom.scale > 1.01) resetPhotoZoom();
+          else setPhotoZoom(2.2);
+          swipeX0 = null;
+          return;
+        }
+        lastTap = now;
+      }
+      if (!e.touches || e.touches.length === 0) {
+        swipeX0 = null;
+        swipeY0 = null;
+      }
+    }, { passive: false });
+
+    // Mouse: drag to pan when zoomed, else swipe; double-click zoom
     let mx0 = null;
-    viewer.addEventListener("mousedown", (e) => { mx0 = e.clientX; });
-    viewer.addEventListener("mouseup", (e) => {
+    let my0 = null;
+    let mPan = null;
+    viewer.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest(".zoom-btn, .media-nav")) return;
+      mx0 = e.clientX;
+      my0 = e.clientY;
+      moved = false;
+      if (state.photoZoom.scale > 1.01) {
+        mPan = { x0: e.clientX, y0: e.clientY, ox: state.photoZoom.x, oy: state.photoZoom.y };
+      }
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!mPan) return;
+      const dx = e.clientX - mPan.x0;
+      const dy = e.clientY - mPan.y0;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      state.photoZoom.x = mPan.ox + dx;
+      state.photoZoom.y = mPan.oy + dy;
+      applyPhotoZoom();
+    });
+    window.addEventListener("mouseup", (e) => {
+      if (mPan) { mPan = null; mx0 = null; return; }
       if (mx0 == null) return;
       const dx = e.clientX - mx0;
-      if (Math.abs(dx) > 50) stepPhoto(dx < 0 ? 1 : -1);
+      if (!moved && state.photoZoom.scale <= 1.01 && Math.abs(dx) > 50) stepPhoto(dx < 0 ? 1 : -1);
       mx0 = null;
+      my0 = null;
+    });
+    viewer.addEventListener("dblclick", (e) => {
+      if (e.target && e.target.closest && e.target.closest(".zoom-btn, .media-nav")) return;
+      e.preventDefault();
+      if (state.photoZoom.scale > 1.01) resetPhotoZoom();
+      else setPhotoZoom(2.2);
     });
   }
 
@@ -591,7 +823,21 @@
     const next = $("media-next");
     if (prev) prev.addEventListener("click", () => stepPhoto(-1));
     if (next) next.addEventListener("click", () => stepPhoto(1));
-    bindSwipe($("media-viewer"));
+    bindPhotoGestures($("media-viewer"));
+
+    const zin = $("media-zoom-in");
+    const zout = $("media-zoom-out");
+    const zreset = $("media-zoom-reset");
+    if (zin) zin.addEventListener("click", () => stepPhotoZoom(1));
+    if (zout) zout.addEventListener("click", () => stepPhotoZoom(-1));
+    if (zreset) zreset.addEventListener("click", () => resetPhotoZoom());
+
+    const pzin = $("media-pdf-zoom-in");
+    const pzout = $("media-pdf-zoom-out");
+    const pzreset = $("media-pdf-zoom-reset");
+    if (pzin) pzin.addEventListener("click", () => stepPdfZoom(1));
+    if (pzout) pzout.addEventListener("click", () => stepPdfZoom(-1));
+    if (pzreset) pzreset.addEventListener("click", () => resetPdfZoom());
 
     const mediaInput = $("media-file-input");
     if (mediaInput) {

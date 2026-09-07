@@ -38,6 +38,7 @@
     mapRefUrl: null,
     mapRefKind: null,   // "pdf" | "image"
     mapRefName: "",
+    mapRefZoom: { scale: 1, x: 0, y: 0 },
     objectUrls: [],
     annotateMode: false,
     idMode: "auto",     // "auto" | "manual"
@@ -474,9 +475,114 @@
     }
   }
 
+
+  const MAP_ZOOM_MIN = 1;
+  const MAP_ZOOM_MAX = 4;
+  const MAP_ZOOM_STEP = 0.35;
+
+  function clampZoom(n, lo, hi) {
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function applyMapRefZoom() {
+    const stage = $("map-ref-zoom-stage");
+    const z = state.mapRefZoom;
+    if (stage) {
+      stage.style.transform = "translate(" + z.x.toFixed(1) + "px," + z.y.toFixed(1) + "px) scale(" + z.scale.toFixed(3) + ")";
+    }
+    const resetBtn = $("map-ref-zoom-reset");
+    if (resetBtn) resetBtn.textContent = z.scale <= 1.01 ? "1×" : (Math.round(z.scale * 10) / 10) + "×";
+  }
+
+  function resetMapRefZoom() {
+    state.mapRefZoom.scale = 1;
+    state.mapRefZoom.x = 0;
+    state.mapRefZoom.y = 0;
+    applyMapRefZoom();
+  }
+
+  function stepMapRefZoom(dir) {
+    const z = state.mapRefZoom;
+    const next = clampZoom(z.scale + dir * MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX);
+    if (next <= 1.01) {
+      resetMapRefZoom();
+      return;
+    }
+    z.scale = next;
+    applyMapRefZoom();
+  }
+
+  function bindMapRefZoomGestures() {
+    const viewer = $("map-ref-viewer");
+    if (!viewer || viewer._mapZoomBound) return;
+    viewer._mapZoomBound = true;
+
+    let pinch = null;
+    let pan = null;
+
+    function dist(a, b) {
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    }
+
+    viewer.addEventListener("touchstart", (e) => {
+      // Let annotate mode own single-finger taps; still allow pinch zoom
+      if (!e.touches) return;
+      if (e.touches.length === 2) {
+        pinch = {
+          dist: dist(e.touches[0], e.touches[1]),
+          scale: state.mapRefZoom.scale,
+          x: state.mapRefZoom.x,
+          y: state.mapRefZoom.y
+        };
+        pan = null;
+        e.preventDefault();
+        return;
+      }
+      pinch = null;
+      if (!state.annotateMode && state.mapRefZoom.scale > 1.01 && e.touches.length === 1) {
+        const t = e.touches[0];
+        pan = { x0: t.clientX, y0: t.clientY, ox: state.mapRefZoom.x, oy: state.mapRefZoom.y };
+      } else {
+        pan = null;
+      }
+    }, { passive: false });
+
+    viewer.addEventListener("touchmove", (e) => {
+      if (e.touches && e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        const d = dist(e.touches[0], e.touches[1]);
+        const next = clampZoom(pinch.scale * (d / pinch.dist), MAP_ZOOM_MIN, MAP_ZOOM_MAX);
+        state.mapRefZoom.scale = next;
+        if (next <= 1.01) {
+          state.mapRefZoom.x = 0;
+          state.mapRefZoom.y = 0;
+        } else {
+          state.mapRefZoom.x = pinch.x;
+          state.mapRefZoom.y = pinch.y;
+        }
+        applyMapRefZoom();
+        return;
+      }
+      if (pan && e.touches && e.touches.length === 1 && !state.annotateMode) {
+        e.preventDefault();
+        const t = e.touches[0];
+        state.mapRefZoom.x = pan.ox + (t.clientX - pan.x0);
+        state.mapRefZoom.y = pan.oy + (t.clientY - pan.y0);
+        applyMapRefZoom();
+      }
+    }, { passive: false });
+
+    viewer.addEventListener("touchend", () => {
+      if (state.mapRefZoom.scale <= 1.01) resetMapRefZoom();
+      pinch = null;
+      pan = null;
+    }, { passive: true });
+  }
+
   function showMapRef(file) {
     revokeMapRefUrl();
     hideMapRefViewers();
+    resetMapRefZoom();
     const name = file.name || "map";
     const lower = name.toLowerCase();
     const url = rememberUrl(URL.createObjectURL(file));
@@ -539,6 +645,7 @@
   function clearMapRef() {
     revokeMapRefUrl();
     hideMapRefViewers();
+    resetMapRefZoom();
     document.body.classList.remove("force-map-ref");
     updateMapRefVisibility();
     renderAnnotOverlay();
@@ -1062,6 +1169,14 @@
 
     const btnClearMap = $("btn-map-ref-clear");
     if (btnClearMap) btnClearMap.addEventListener("click", clearMapRef);
+
+    const mzin = $("map-ref-zoom-in");
+    const mzout = $("map-ref-zoom-out");
+    const mzreset = $("map-ref-zoom-reset");
+    if (mzin) mzin.addEventListener("click", () => stepMapRefZoom(1));
+    if (mzout) mzout.addEventListener("click", () => stepMapRefZoom(-1));
+    if (mzreset) mzreset.addEventListener("click", () => resetMapRefZoom());
+    bindMapRefZoomGestures();
 
     const btnToggleMap = $("btn-map-ref-toggle");
     if (btnToggleMap) {
