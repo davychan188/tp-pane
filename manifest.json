@@ -1,0 +1,25 @@
+{
+  "name": "GeoPackage Viewer · 樹木媒體",
+  "short_name": "GPKG Media",
+  "description": "離線 GeoPackage 檢視器，附樹木相片／PDF 面板。檔案只留本機。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1020",
+  "theme_color": "#12192b",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

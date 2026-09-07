@@ -1,0 +1,2 @@
+Adapted from https://github.com/hugoleung04/gpkg-viewer (public archive download).
+This fork adds the arboriculture media panel; upstream is not modified in place.
