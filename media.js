@@ -842,10 +842,13 @@
     }
   }
 
-  /** Mobile/iPad keyboard hints for attrs-card inline edits. */
+  /** Mobile/iPad keyboard / Scribble hints for attrs enlarge-edit overlay. */
   function configureAttrInlineInput(inp, key) {
     if (!inp) return;
     inp.setAttribute("type", "text");
+    inp.setAttribute("autocomplete", "off");
+    inp.setAttribute("autocorrect", "off");
+    inp.setAttribute("spellcheck", "false");
     const f = String(key || "");
     const fl = f.toLowerCase();
     const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
@@ -864,13 +867,11 @@
     if (isSpecies || isRemarks) {
       inp.setAttribute("lang", "en");
       inp.setAttribute("autocapitalize", isRemarks ? "sentences" : "off");
-      inp.setAttribute("autocomplete", "off");
       inp.setAttribute("spellcheck", isRemarks ? "true" : "false");
       return;
     }
     if (isTreeId) {
       inp.setAttribute("autocapitalize", "off");
-      inp.setAttribute("autocomplete", "off");
     }
   }
 
@@ -879,20 +880,13 @@
     if (node && node.parentNode) node.parentNode.removeChild(node);
   }
 
-  function placeAttrEditOverlay(wrap, anchorEl) {
-    if (!wrap || !anchorEl) return;
-    const rect = anchorEl.getBoundingClientRect();
-    const pad = 10;
-    const ow = Math.max(wrap.offsetWidth || 0, 240);
-    const oh = Math.max(wrap.offsetHeight || 0, 140);
-    let left = rect.left;
-    let top = rect.top - 6;
-    if (left + ow > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - ow - pad);
-    if (left < pad) left = pad;
-    if (top + oh > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - oh - pad);
-    if (top < pad) top = pad;
-    wrap.style.left = left + "px";
-    wrap.style.top = top + "px";
+  /** Center attrs enlarge-edit in the viewport (no CSS transform — Pencil/Scribble friendly). */
+  function placeAttrEditOverlay(wrap) {
+    if (!wrap) return;
+    wrap.style.left = "0";
+    wrap.style.top = "0";
+    wrap.style.right = "0";
+    wrap.style.bottom = "0";
   }
 
   function startAttrEdit(el) {
@@ -914,26 +908,31 @@
     const wrap = document.createElement("div");
     wrap.id = "attr-edit-overlay";
     wrap.className = "tree-list-edit-overlay attr-edit-overlay";
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
+    const panel = document.createElement("div");
+    panel.className = "tree-list-edit-overlay-panel";
     const cap = document.createElement("div");
     cap.className = "tree-list-edit-overlay-cap";
     cap.textContent = String(key);
     const inp = document.createElement("textarea");
     inp.className = "tree-list-input tree-list-edit-overlay-input";
-    inp.setAttribute("rows", "3");
+    inp.setAttribute("rows", "6");
     inp.setAttribute("enterkeyhint", "done");
     configureAttrInlineInput(inp, key);
     inp.value = old;
-    wrap.appendChild(cap);
-    wrap.appendChild(inp);
+    panel.appendChild(cap);
+    panel.appendChild(inp);
+    wrap.appendChild(panel);
     document.body.appendChild(wrap);
-    placeAttrEditOverlay(wrap, el);
-    requestAnimationFrame(function () { placeAttrEditOverlay(wrap, el); });
+    placeAttrEditOverlay(wrap);
+    requestAnimationFrame(function () { placeAttrEditOverlay(wrap); });
     inp.focus();
     try { inp.select(); } catch (_) {}
 
     let done = false;
     function onWinChange() {
-      if (!done) placeAttrEditOverlay(wrap, el);
+      if (!done) placeAttrEditOverlay(wrap);
     }
     window.addEventListener("resize", onWinChange);
     window.addEventListener("scroll", onWinChange, true);
@@ -979,8 +978,11 @@
       if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
     });
     inp.addEventListener("blur", () => { setTimeout(() => finish(true), 0); });
-    wrap.addEventListener("click", (ev) => ev.stopPropagation());
-    wrap.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    panel.addEventListener("click", (ev) => ev.stopPropagation());
+    panel.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    wrap.addEventListener("pointerdown", (ev) => {
+      if (ev.target === wrap) { ev.preventDefault(); finish(true); }
+    });
   }
 
   function bindFeatureAttrEdits(box) {

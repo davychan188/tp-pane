@@ -42,6 +42,7 @@
 
   const state = {
     trees: [],          // { id, props, feature, hasCoords, x, y, path, annot, leafletMarker }
+    drawStrokes: [],    // freehand ink only (not trees): [{ path: [{x,y}, ...] }]
     sourceName: "",
     mapRefUrl: null,
     mapRefRasterUrl: null, // PNG/JPG blob used for annotate when PDF was rasterized
@@ -103,7 +104,16 @@
     });
   }
 
-  function persistSession() {
+  function serializeDrawStrokes() {
+    return (state.drawStrokes || []).map(function (s) {
+      const path = Array.isArray(s && s.path) ? s.path : null;
+      const norm = path ? simplifyPath(path) || normalizePath(path) : null;
+      if (!norm || !norm.length) return null;
+      return { path: norm.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; }) };
+    }).filter(Boolean);
+  }
+
+    function persistSession() {
     persistTimer = null;
     if (restoring) return;
     const mapMeta = state.mapRefUrl
@@ -116,7 +126,8 @@
       idMode: state.idMode || "auto",
       forceMapRef: document.body.classList.contains("force-map-ref"),
       mapRef: mapMeta,
-      trees: serializeTrees()
+      trees: serializeTrees(),
+      drawStrokes: serializeDrawStrokes()
     };
     try {
       localStorage.setItem(LS_SESSION, JSON.stringify(payload));
@@ -156,6 +167,7 @@
   function clearPersistedSession() {
     try { localStorage.removeItem(LS_SESSION); } catch (_) {}
     state.mapRefMeta = null;
+    state.drawStrokes = [];
   }
 
   function rebuildFeature(rec) {
@@ -179,7 +191,10 @@
     if (!raw) return;
     let data;
     try { data = JSON.parse(raw); } catch (_) { return; }
-    if (!data || !Array.isArray(data.trees) || !data.trees.length) return;
+    if (!data) return;
+    const hasTrees = Array.isArray(data.trees) && data.trees.length;
+    const hasDraw = Array.isArray(data.drawStrokes) && data.drawStrokes.length;
+    if (!hasTrees && !hasDraw) return;
 
     restoring = true;
     try {
@@ -188,7 +203,17 @@
       state.mapRefMeta = data.mapRef || null;
 
       clearLeafletAnnotMarkers();
-      state.trees = data.trees.map((rec) => {
+      state.drawStrokes = hasDraw
+        ? data.drawStrokes.map(function (s) {
+            const path = Array.isArray(s && s.path) ? s.path : null;
+            if (!path || !path.length) return null;
+            const pts = path.map(function (p) {
+              return { x: Number(p.x), y: Number(p.y) };
+            }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); });
+            return pts.length ? { path: pts } : null;
+          }).filter(Boolean)
+        : [];
+      state.trees = hasTrees ? data.trees.map((rec) => {
         const feature = rebuildFeature(rec);
         const hasCoords = !!(feature.geometry && feature.geometry.type === "Point");
         return {
@@ -205,9 +230,10 @@
           leafletMarker: null,
           source: rec.source || ""
         };
-      });
+      }) : [];
 
       renderTreeList();
+      renderAnnotOverlay();
 
       const importedMapped = state.trees.filter((t) => t.hasCoords && !t.annot);
       const annotMapped = state.trees.filter((t) => t.hasCoords && t.annot);
@@ -349,10 +375,13 @@
     return true;
   }
 
-  /** Mobile/iPad keyboard hints for inline list edits. */
+  /** Mobile/iPad keyboard / Scribble hints for list enlarge-edit overlay. */
   function configureListInlineInput(inp, field) {
     if (!inp) return;
     inp.setAttribute("type", "text");
+    inp.setAttribute("autocomplete", "off");
+    inp.setAttribute("autocorrect", "off");
+    inp.setAttribute("spellcheck", "false");
     const f = String(field || "");
     const fl = f.toLowerCase();
     const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
@@ -369,13 +398,11 @@
     if (isSpecies || isRemarks) {
       inp.setAttribute("lang", "en");
       inp.setAttribute("autocapitalize", isRemarks ? "sentences" : "off");
-      inp.setAttribute("autocomplete", "off");
       inp.setAttribute("spellcheck", isRemarks ? "true" : "false");
       return;
     }
     // Tree ID and other text fields
     inp.setAttribute("autocapitalize", "off");
-    inp.setAttribute("autocomplete", "off");
   }
 
   function removeListEditOverlay() {
@@ -383,20 +410,14 @@
     if (el && el.parentNode) el.parentNode.removeChild(el);
   }
 
-  function placeListEditOverlay(wrap, fieldEl) {
-    if (!wrap || !fieldEl) return;
-    const rect = fieldEl.getBoundingClientRect();
-    const pad = 10;
-    const ow = Math.max(wrap.offsetWidth || 0, 240);
-    const oh = Math.max(wrap.offsetHeight || 0, 140);
-    let left = rect.left;
-    let top = rect.top - 6;
-    if (left + ow > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - ow - pad);
-    if (left < pad) left = pad;
-    if (top + oh > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - oh - pad);
-    if (top < pad) top = pad;
-    wrap.style.left = left + "px";
-    wrap.style.top = top + "px";
+  /** Center the enlarge-edit card in the viewport (no CSS transform — better Pencil/Scribble). */
+  function placeListEditOverlay(wrap) {
+    if (!wrap) return;
+    // Scrim fills the viewport; inner panel is flex-centered via CSS (no transform scale).
+    wrap.style.left = "0";
+    wrap.style.top = "0";
+    wrap.style.right = "0";
+    wrap.style.bottom = "0";
   }
 
   function startTreeListFieldEdit(fieldEl) {
@@ -425,31 +446,35 @@
     const wrap = document.createElement("div");
     wrap.id = "tree-list-edit-overlay";
     wrap.className = "tree-list-edit-overlay";
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
     if (fieldEl.classList.contains("tree-list-num")) wrap.classList.add("is-num");
     if (fieldEl.classList.contains("tree-list-remarks") || fieldEl.classList.contains("tree-list-sp")) {
       wrap.classList.add("is-wide");
     }
+    const panel = document.createElement("div");
+    panel.className = "tree-list-edit-overlay-panel";
     const cap = document.createElement("div");
     cap.className = "tree-list-edit-overlay-cap";
     cap.textContent = String(field) + " · " + String(treeId);
     const inp = document.createElement("textarea");
     inp.className = "tree-list-input tree-list-edit-overlay-input";
-    inp.setAttribute("rows", "3");
+    inp.setAttribute("rows", "6");
     inp.setAttribute("enterkeyhint", "done");
     configureListInlineInput(inp, field);
     inp.value = old;
-    wrap.appendChild(cap);
-    wrap.appendChild(inp);
+    panel.appendChild(cap);
+    panel.appendChild(inp);
+    wrap.appendChild(panel);
     document.body.appendChild(wrap);
-    placeListEditOverlay(wrap, fieldEl);
-    // Reposition after layout / keyboard
-    requestAnimationFrame(function () { placeListEditOverlay(wrap, fieldEl); });
+    placeListEditOverlay(wrap);
+    requestAnimationFrame(function () { placeListEditOverlay(wrap); });
     inp.focus();
     try { inp.select(); } catch (_) {}
 
     let done = false;
     function onWinChange() {
-      if (!done) placeListEditOverlay(wrap, fieldEl);
+      if (!done) placeListEditOverlay(wrap);
     }
     window.addEventListener("resize", onWinChange);
     window.addEventListener("scroll", onWinChange, true);
@@ -495,8 +520,11 @@
     });
     // Defer blur so tap-outside still commits after any click handlers
     inp.addEventListener("blur", () => { setTimeout(() => finish(true), 0); });
-    wrap.addEventListener("click", (ev) => ev.stopPropagation());
-    wrap.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    panel.addEventListener("click", (ev) => ev.stopPropagation());
+    panel.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    wrap.addEventListener("pointerdown", (ev) => {
+      if (ev.target === wrap) { ev.preventDefault(); finish(true); }
+    });
   }
 
   function bindTreeListInteractions(box) {
@@ -985,6 +1013,7 @@
       ensureAnnotLayerObserver();
       syncAnnotLayerToContent();
     }
+    syncAnnotLayerActive();
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
       setTimeout(() => window.GpkgViewer.invalidateMap(), 50);
     }
@@ -1352,7 +1381,7 @@
       setImportStatus("正在將 PDF 轉成影像以便加樹…", "");
       rasterizeMapRefPdf(url).then(function (ok) {
         if (ok) {
-          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可開「加樹模式」）");
+          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可直接畫墨跡）");
           return;
         }
         // Fallback: native PDF viewer (less accurate for annotate)
@@ -1373,7 +1402,7 @@
           img.hidden = true;
           img.removeAttribute("src");
         }
-        finishShow("已載入地圖參考：" + name + "（PDF 檢視器 · 建議改用 PNG／JPG 加樹）");
+        finishShow("已載入地圖參考：" + name + "（PDF 檢視器 · 建議改用 PNG／JPG 畫記）");
       });
       return;
     }
@@ -1397,7 +1426,7 @@
       openTab.removeAttribute("download");
       openTab.textContent = "新分頁開啟地圖圖片";
     }
-    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」用 Pencil 畫記加樹）");
+    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可直接畫墨跡；開「加樹模式」短點加樹）");
   }
 
   function clearMapRef() {
@@ -1477,6 +1506,7 @@
   function clearTreeList() {
     clearLeafletAnnotMarkers();
     state.trees = [];
+    state.drawStrokes = [];
     state.sourceName = "";
     renderTreeList();
     clearPersistedSession();
@@ -1505,6 +1535,18 @@
     updateAnnotUi();
   }
 
+  /** Enable pointer capture on the annotate layer for ink draw whenever map-ref is visible. */
+  function syncAnnotLayerActive() {
+    const layer = $("map-annotate-layer");
+    if (!layer) return;
+    const mapRef = document.body.classList.contains("has-map-ref");
+    // Draw ink whenever map-ref is up; 加樹 mode only adds tap-to-place trees.
+    const active = mapRef || state.annotateMode;
+    layer.classList.toggle("active", active);
+    layer.classList.toggle("place-trees", !!state.annotateMode);
+    layer.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+
   function setAnnotateMode(on) {
     state.annotateMode = !!on;
     document.body.classList.toggle("annotate-mode", state.annotateMode);
@@ -1517,11 +1559,7 @@
         btn.textContent = state.annotateMode ? "加樹 · 開" : "加樹模式";
       }
     });
-    const layer = $("map-annotate-layer");
-    if (layer) {
-      layer.classList.toggle("active", state.annotateMode);
-      layer.setAttribute("aria-hidden", state.annotateMode ? "false" : "true");
-    }
+    syncAnnotLayerActive();
     updatePdfHint();
     updateAnnotUi();
     ensureLeafletAnnotBinding();
@@ -1529,8 +1567,8 @@
     if (state.annotateMode) {
       setImportStatus(
         state.idMode === "manual"
-          ? "加樹模式（手動編號）：Apple Pencil 自由畫記；鬆開後輸入編號；長按標記可拖移"
-          : "加樹模式（自動編號）：Apple Pencil 自由畫記 → T1、T2…；長按標記可拖移；手指縮放可平移",
+          ? "加樹模式（手動編號）：短點地圖放置後輸入編號；長按標記可拖移。自由畫＝純墨跡，不加樹"
+          : "加樹模式（自動編號）：短點地圖 → T1、T2…；長按標記可拖移。自由畫＝純墨跡，不加樹",
         "ok"
       );
     } else {
@@ -1556,10 +1594,10 @@
     if (hint) {
       if (state.annotateMode) {
         hint.textContent = state.idMode === "manual"
-          ? "手動編號：Pencil 自由畫記後輸入 ID。短點選取；長按拖移整條記號。手指縮放可平移。"
-          : "自動編號：Pencil 自由畫記 → T1、T2…。短點選取；長按拖移。放置點＝筆跡重心。PNG／JPG 最佳。";
+          ? "加樹（手動）：短點地圖後輸入 ID。自由畫＝純墨跡（不加樹）。長按標記可拖移；雙指縮放／平移。"
+          : "加樹（自動）：短點地圖 → T1、T2…。自由畫＝純墨跡（不加樹）。長按標記可拖移；雙指縮放／平移。";
       } else {
-        hint.textContent = "開啟「加樹模式」後，用 Apple Pencil 在地圖上自由畫記號加樹。PNG／JPG 地圖最合適。";
+        hint.textContent = "地圖可直接用 Pencil／手指畫墨跡（不加樹）。要加樹請開「加樹模式」再短點地圖。PNG／JPG 最佳。";
       }
     }
   }
@@ -1833,6 +1871,13 @@
     const selU = selected ? String(selected).toUpperCase() : "";
     let pathsHtml = "";
     let markersHtml = "";
+    // Pure annotation ink (never creates trees / T-numbers)
+    (state.drawStrokes || []).forEach(function (s) {
+      const inkPts = (s && s.path && s.path.length >= 2) ? s.path : null;
+      if (!inkPts) return;
+      pathsHtml += '<path class="annot-draw-ink" d="' + pathToSvgD(inkPts) +
+        '" fill="none" vector-effect="non-scaling-stroke"></path>';
+    });
     state.trees.forEach((t) => {
       if (t.x == null || t.y == null) return;
       const tid = escapeHtml(t.id);
@@ -2186,16 +2231,21 @@
       try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
       endGesture();
       suppressClickUntil = Date.now() + 450;
-      if (!pts || !pts.length) return;
-      const c = pathCentroid(pts);
-      if (!c) return;
-      beginPlace({ x: c.x, y: c.y, path: pts, lat: null, lng: null, source: "map-ref" });
-      // Refresh overlay after place (async UI / dialog may defer)
-      if (state.idMode !== "manual") renderAnnotOverlay();
+      if (!pts || pts.length < 2) return; // ignore tiny dots — not ink
+      state.drawStrokes = state.drawStrokes || [];
+      state.drawStrokes.push({ path: pts });
+      // Cap session ink so localStorage stays bounded
+      if (state.drawStrokes.length > 400) {
+        state.drawStrokes = state.drawStrokes.slice(-400);
+      }
+      schedulePersist();
+      renderAnnotOverlay();
+      setImportStatus("已畫墨跡（不加樹）· 共 " + state.drawStrokes.length + " 筆", "ok");
     }
 
     layer.addEventListener("pointerdown", (e) => {
-      if (!state.annotateMode) return;
+      // Ink draw works whenever the layer is active (map-ref). Tree place needs 加樹 mode.
+      if (!layer.classList.contains("active")) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
 
       const hitMarker = e.target && e.target.closest && e.target.closest(".annot-marker");
