@@ -1348,6 +1348,12 @@
       // Never pan with Apple Pencil — ink draw owns stylus (even when zoomed)
       if (isStylusTouch(t)) {
         pan = null;
+        // At CSS scale ≥ ~1.9 WebKit often misses the transformed annotate layer;
+        // without preventDefault, Safari scroll/Scribble cancels the pen pointer stream.
+        const annot = $("map-annotate-layer");
+        if (annot && annot.classList.contains("active")) {
+          e.preventDefault();
+        }
         return;
       }
       // Finger pan when zoomed — including annotate mode (letterbox / areas not on the layer)
@@ -2138,8 +2144,13 @@
   }
 
   function bindAnnotOverlayPointers(layer) {
-    if (!layer || layer._annotPtrBound) return;
-    layer._annotPtrBound = true;
+    // Bind on #map-ref-viewer (no CSS transform), not the layer inside .map-ref-zoom-stage.
+    // Root cause of Pencil dying at zoom ≥ ~1.9×: WebKit hit-tests the untransformed
+    // annotate layer box, so most of the visually scaled map misses the layer and never
+    // starts ink — while getBoundingClientRect/% math on the layer remains correct.
+    const viewer = $("map-ref-viewer");
+    if (!layer || !viewer || viewer._annotPtrBound) return;
+    viewer._annotPtrBound = true;
 
     const LONG_MS = 450;
     const MOVE_CANCEL_PX = 14;
@@ -2163,7 +2174,21 @@
     }
 
     function pctFromClient(clientX, clientY) {
+      // Layer may miss hit-testing when stage is scaled, but its transformed rect is still valid.
       return pctFromEvent(layer, clientX, clientY);
+    }
+
+    /** Visual AABB hit-test — needed when CSS scale makes elementFromPoint/target miss markers. */
+    function hitTestMarkerAt(clientX, clientY) {
+      const nodes = layer.querySelectorAll(".annot-marker");
+      for (let i = 0; i < nodes.length; i++) {
+        const r = nodes[i].getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+          return nodes[i];
+        }
+      }
+      return null;
     }
 
     function findMarkerEl(treeId) {
@@ -2272,7 +2297,7 @@
         panning: false,
         points: firstPct ? [firstPct] : []
       };
-      try { layer.setPointerCapture(e.pointerId); } catch (_) {}
+      try { viewer.setPointerCapture(e.pointerId); } catch (_) {}
       showPreview(gesture.points);
     }
 
@@ -2280,7 +2305,7 @@
       const g = gesture;
       const pts = simplifyPath(g && g.points ? g.points : null) || normalizePath(g && g.points);
       clearPreview();
-      try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
+      try { viewer.releasePointerCapture(e.pointerId); } catch (_) {}
       endGesture();
       suppressClickUntil = Date.now() + 450;
       if (!pts || pts.length < 2) return; // ignore tiny dots — not ink
@@ -2295,8 +2320,8 @@
       setImportStatus("已畫墨跡（不加樹）· 共 " + state.drawStrokes.length + " 筆", "ok");
     }
 
-    // Claim Apple Pencil touch stream so viewer pinch/pan handlers cannot cancel ink
-    layer.addEventListener("touchstart", (e) => {
+    // Claim Apple Pencil on the untransformed viewer (capture) so stage scale cannot drop the target
+    viewer.addEventListener("touchstart", (e) => {
       if (!layer.classList.contains("active")) return;
       if (!e.touches || !e.touches.length) return;
       let stylus = false;
@@ -2307,14 +2332,15 @@
       if (!stylus) return;
       e.preventDefault();
       e.stopPropagation();
-    }, { passive: false });
+    }, { passive: false, capture: true });
 
-    layer.addEventListener("pointerdown", (e) => {
+    viewer.addEventListener("pointerdown", (e) => {
       // Ink draw works whenever the layer is active (map-ref). Tree place needs 加樹 mode.
       if (!layer.classList.contains("active")) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      // Ignore UI chrome inside the viewer (zoom is in toolbar outside viewer)
 
-      const hitMarker = e.target && e.target.closest && e.target.closest(".annot-marker");
+      const hitMarker = (e.target && e.target.closest && e.target.closest(".annot-marker")) || hitTestMarkerAt(e.clientX, e.clientY);
       const hitInk = e.target && e.target.closest && e.target.closest("path.annot-ink");
       let tid = null;
       let hit = null;
@@ -2384,7 +2410,7 @@
       };
     }, { passive: false });
 
-    layer.addEventListener("pointermove", (e) => {
+    viewer.addEventListener("pointermove", (e) => {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
       const dx = e.clientX - gesture.startX;
       const dy = e.clientY - gesture.startY;
@@ -2430,7 +2456,7 @@
           // Unzoomed finger stroke → freehand draw
           gesture.mode = "draw";
           gesture.place = false;
-          try { layer.setPointerCapture(e.pointerId); } catch (_) {}
+          try { viewer.setPointerCapture(e.pointerId); } catch (_) {}
           const pct = pctFromClient(e.clientX, e.clientY);
           if (pct) gesture.points.push(pct);
           showPreview(gesture.points);
@@ -2517,8 +2543,8 @@
       }
     }
 
-    layer.addEventListener("pointerup", finishPointer, { passive: false });
-    layer.addEventListener("pointercancel", (e) => {
+    viewer.addEventListener("pointerup", finishPointer, { passive: false });
+    viewer.addEventListener("pointercancel", (e) => {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
       if (gesture.mode === "draw") {
         // Safari often cancels Pencil mid-stroke (scroll/Scribble); keep ink if we sampled a path
@@ -2527,7 +2553,7 @@
           return;
         }
         clearPreview();
-        try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
+        try { viewer.releasePointerCapture(e.pointerId); } catch (_) {}
         endGesture();
         suppressClickUntil = Date.now() + 300;
         return;
@@ -2546,7 +2572,7 @@
       suppressClickUntil = Date.now() + 300;
     }, { passive: false });
 
-    layer.addEventListener("click", (e) => {
+    viewer.addEventListener("click", (e) => {
       if (Date.now() < suppressClickUntil) {
         e.preventDefault();
         e.stopPropagation();
