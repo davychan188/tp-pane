@@ -842,6 +842,38 @@
     }
   }
 
+  /** Mobile/iPad keyboard hints for attrs-card inline edits. */
+  function configureAttrInlineInput(inp, key) {
+    if (!inp) return;
+    inp.setAttribute("type", "text");
+    const f = String(key || "");
+    const fl = f.toLowerCase();
+    const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
+      fl === "dbh" || fl === "height" || fl === "spread" ||
+      METRIC_DEFS.some((d) => d.key === f || (d.aliases && d.aliases.indexOf(f) >= 0));
+    const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
+    const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注" ||
+      (typeof REMARKS_ALIASES !== "undefined" && REMARKS_ALIASES.indexOf(f) >= 0);
+    const isTreeId = PRIMARY_KEYS.indexOf(f) >= 0;
+    if (isMetric) {
+      inp.setAttribute("inputmode", "decimal");
+      inp.setAttribute("enterkeyhint", "done");
+      return;
+    }
+    inp.setAttribute("inputmode", "text");
+    if (isSpecies || isRemarks) {
+      inp.setAttribute("lang", "en");
+      inp.setAttribute("autocapitalize", isRemarks ? "sentences" : "off");
+      inp.setAttribute("autocomplete", "off");
+      inp.setAttribute("spellcheck", isRemarks ? "true" : "false");
+      return;
+    }
+    if (isTreeId) {
+      inp.setAttribute("autocapitalize", "off");
+      inp.setAttribute("autocomplete", "off");
+    }
+  }
+
   function startAttrEdit(el) {
     if (!el || el.classList.contains("editing")) return;
     const key = el.getAttribute("data-attr-key");
@@ -850,6 +882,7 @@
     el.classList.add("editing");
     el.innerHTML = "<input type='text' />";
     const inp = el.querySelector("input");
+    configureAttrInlineInput(inp, key);
     inp.value = old;
     inp.focus();
     inp.select();

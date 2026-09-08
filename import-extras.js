@@ -44,16 +44,19 @@
     trees: [],          // { id, props, feature, hasCoords, x, y, annot, leafletMarker }
     sourceName: "",
     mapRefUrl: null,
+    mapRefRasterUrl: null, // PNG/JPG blob used for annotate when PDF was rasterized
     mapRefKind: null,   // "pdf" | "image"
     mapRefName: "",
     mapRefMeta: null,   // { name, kind } when map blob cannot be restored
     mapRefZoom: { scale: 1, x: 0, y: 0 },
+    mapRefRasterized: false,
     objectUrls: [],
     annotateMode: false,
     idMode: "auto",     // "auto" | "manual"
     pendingPlace: null, // { x, y, lat, lng, source }
     leafletAnnotLayer: null,
-    leafletBound: false
+    leafletBound: false,
+    annotLayerRo: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -339,6 +342,35 @@
     return true;
   }
 
+  /** Mobile/iPad keyboard hints for inline list edits. */
+  function configureListInlineInput(inp, field) {
+    if (!inp) return;
+    inp.setAttribute("type", "text");
+    const f = String(field || "");
+    const fl = f.toLowerCase();
+    const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
+      fl === "dbh" || fl === "height" || fl === "spread";
+    const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
+    const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注";
+    if (isMetric) {
+      // Prefer text + decimal so empty values stay editable; shows numeric keypad.
+      inp.setAttribute("inputmode", "decimal");
+      inp.setAttribute("enterkeyhint", "done");
+      return;
+    }
+    inp.setAttribute("inputmode", "text");
+    if (isSpecies || isRemarks) {
+      inp.setAttribute("lang", "en");
+      inp.setAttribute("autocapitalize", isRemarks ? "sentences" : "off");
+      inp.setAttribute("autocomplete", "off");
+      inp.setAttribute("spellcheck", isRemarks ? "true" : "false");
+      return;
+    }
+    // Tree ID and other text fields
+    inp.setAttribute("autocapitalize", "off");
+    inp.setAttribute("autocomplete", "off");
+  }
+
   function startTreeListFieldEdit(fieldEl) {
     if (!fieldEl || fieldEl.classList.contains("editing")) return;
     const treeId = fieldEl.getAttribute("data-tree-id");
@@ -353,6 +385,7 @@
     fieldEl.classList.add("editing");
     fieldEl.innerHTML = "<input type='text' class='tree-list-input' />";
     const inp = fieldEl.querySelector("input");
+    configureListInlineInput(inp, field);
     inp.value = old;
     inp.focus();
     inp.select();
@@ -574,9 +607,14 @@
     if (state.mapRefUrl && String(state.mapRefUrl).indexOf("blob:") === 0) {
       try { URL.revokeObjectURL(state.mapRefUrl); } catch (e) { /* ignore */ }
     }
+    if (state.mapRefRasterUrl && String(state.mapRefRasterUrl).indexOf("blob:") === 0) {
+      try { URL.revokeObjectURL(state.mapRefRasterUrl); } catch (e) { /* ignore */ }
+    }
     state.mapRefUrl = null;
+    state.mapRefRasterUrl = null;
     state.mapRefKind = null;
     state.mapRefName = "";
+    state.mapRefRasterized = false;
   }
 
   function parseCsvText(text) {
@@ -873,6 +911,10 @@
     if (mapEl) mapEl.classList.toggle("map-ref-active", show);
     updateFloatBarVisibility(show);
     updatePdfHint();
+    if (show) {
+      ensureAnnotLayerObserver();
+      syncAnnotLayerToContent();
+    }
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
       setTimeout(() => window.GpkgViewer.invalidateMap(), 50);
     }
@@ -919,6 +961,163 @@
     return Math.max(lo, Math.min(hi, n));
   }
 
+  /** object-fit:contain content box inside an element of size elW×elH */
+  function containBox(elW, elH, contentW, contentH) {
+    if (!elW || !elH || !contentW || !contentH) {
+      return { left: 0, top: 0, width: elW || 0, height: elH || 0 };
+    }
+    const scale = Math.min(elW / contentW, elH / contentH);
+    const width = contentW * scale;
+    const height = contentH * scale;
+    return {
+      left: (elW - width) / 2,
+      top: (elH - height) / 2,
+      width: width,
+      height: height
+    };
+  }
+
+  function getMapRefMediaEl() {
+    const img = $("map-ref-img");
+    if (img && !img.hidden && img.getAttribute("src") && img.naturalWidth > 0) return img;
+    return null;
+  }
+
+  /**
+   * Pin annotate layer to the painted map image content (not letterbox / overlay viewport).
+   * Layer lives inside #map-ref-zoom-stage so CSS zoom/pan keeps markers glued to the map.
+   */
+  function syncAnnotLayerToContent() {
+    const layer = $("map-annotate-layer");
+    const stage = $("map-ref-zoom-stage");
+    if (!layer || !stage) return;
+    const media = getMapRefMediaEl();
+    const sw = stage.clientWidth || 0;
+    const sh = stage.clientHeight || 0;
+    if (!media || !sw || !sh) {
+      layer.style.left = "0";
+      layer.style.top = "0";
+      layer.style.width = "100%";
+      layer.style.height = "100%";
+      return;
+    }
+    const box = containBox(sw, sh, media.naturalWidth, media.naturalHeight);
+    layer.style.left = box.left.toFixed(2) + "px";
+    layer.style.top = box.top.toFixed(2) + "px";
+    layer.style.width = box.width.toFixed(2) + "px";
+    layer.style.height = box.height.toFixed(2) + "px";
+  }
+
+  function ensureAnnotLayerObserver() {
+    const viewer = $("map-ref-viewer");
+    if (!viewer || typeof ResizeObserver === "undefined") return;
+    if (state.annotLayerRo) return;
+    state.annotLayerRo = new ResizeObserver(function () {
+      syncAnnotLayerToContent();
+    });
+    state.annotLayerRo.observe(viewer);
+    const stage = $("map-ref-zoom-stage");
+    if (stage) state.annotLayerRo.observe(stage);
+  }
+
+  function getPdfjsLib() {
+    return (typeof window !== "undefined" && window.pdfjsLib) ? window.pdfjsLib : null;
+  }
+
+  function ensurePdfjsForMapRef() {
+    const lib = getPdfjsLib();
+    if (!lib) return null;
+    try {
+      if (!lib.GlobalWorkerOptions.workerSrc) {
+        const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
+        lib.GlobalWorkerOptions.workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
+      }
+    } catch (e) { /* ignore */ }
+    return lib;
+  }
+
+  /**
+   * Rasterize PDF page 1 to a PNG blob URL and show via #map-ref-img so annotate
+   * shares the same image content-box coordinate space as PNG/JPG maps.
+   */
+  function rasterizeMapRefPdf(pdfUrl) {
+    const lib = ensurePdfjsForMapRef();
+    if (!lib) return Promise.resolve(false);
+    return (async function () {
+      const task = lib.getDocument({ url: pdfUrl });
+      const doc = await task.promise;
+      try {
+        const page = await doc.getPage(1);
+        const base = page.getViewport({ scale: 1 });
+        // Aim ~1600px on the long edge for sharp annotate without huge memory
+        const longEdge = Math.max(base.width, base.height) || 1;
+        const scale = Math.min(2.5, Math.max(1.25, 1600 / longEdge));
+        const viewport = page.getViewport({ scale: scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (!ctx) return false;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        const blob = await new Promise(function (resolve) {
+          if (canvas.toBlob) canvas.toBlob(resolve, "image/png");
+          else resolve(null);
+        });
+        if (!blob) return false;
+        if (state.mapRefRasterUrl && String(state.mapRefRasterUrl).indexOf("blob:") === 0) {
+          try { URL.revokeObjectURL(state.mapRefRasterUrl); } catch (e) { /* ignore */ }
+        }
+        const rasterUrl = rememberUrl(URL.createObjectURL(blob));
+        state.mapRefRasterUrl = rasterUrl;
+        state.mapRefRasterized = true;
+        const img = $("map-ref-img");
+        const obj = $("map-ref-object");
+        const emb = $("map-ref-embed");
+        const frame = $("map-ref-frame");
+        if (obj) {
+          obj.hidden = true;
+          try { obj.removeAttribute("data"); } catch (e) { /* ignore */ }
+          obj.data = "";
+        }
+        if (emb) {
+          try { emb.removeAttribute("src"); } catch (e) { /* ignore */ }
+          emb.src = "";
+        }
+        if (frame) {
+          frame.hidden = true;
+          frame.removeAttribute("src");
+        }
+        if (img) {
+          await new Promise(function (resolve) {
+            var settled = false;
+            const done = function () {
+              if (settled) return;
+              settled = true;
+              img.removeEventListener("load", done);
+              img.removeEventListener("error", done);
+              resolve();
+            };
+            img.addEventListener("load", done);
+            img.addEventListener("error", done);
+            img.hidden = false;
+            img.src = rasterUrl;
+            img.alt = (state.mapRefName || "map") + " (page 1)";
+            if (img.complete && img.naturalWidth) done();
+          });
+        }
+        return true;
+      } finally {
+        try { if (doc && doc.destroy) doc.destroy(); } catch (e) { /* ignore */ }
+      }
+    })().catch(function (err) {
+      console.warn("map-ref PDF rasterize failed", err);
+      state.mapRefRasterized = false;
+      return false;
+    });
+  }
+
   function applyMapRefZoom() {
     const stage = $("map-ref-zoom-stage");
     const z = state.mapRefZoom;
@@ -927,6 +1126,8 @@
     }
     const resetBtn = $("map-ref-zoom-reset");
     if (resetBtn) resetBtn.textContent = z.scale <= 1.01 ? "1×" : (Math.round(z.scale * 10) / 10) + "×";
+    // Layout box unchanged by transform; keep content-box layer aligned after panel changes
+    syncAnnotLayerToContent();
   }
 
   function resetMapRefZoom() {
@@ -1023,6 +1224,7 @@
     const url = rememberUrl(URL.createObjectURL(file));
     state.mapRefUrl = url;
     state.mapRefName = name;
+    state.mapRefRasterized = false;
 
     const frame = $("map-ref-frame");
     const obj = $("map-ref-object");
@@ -1031,53 +1233,77 @@
     const label = $("map-ref-label");
     const openTab = $("map-ref-open-tab");
 
+    function finishShow(statusMsg) {
+      if (label) label.textContent = "地圖參考 · " + name;
+      document.body.classList.add("force-map-ref");
+      state.mapRefMeta = { name: name, kind: state.mapRefKind };
+      updateMapRefVisibility();
+      ensureAnnotLayerObserver();
+      syncAnnotLayerToContent();
+      renderAnnotOverlay();
+      updateMapRestoreHint();
+      schedulePersist();
+      setImportStatus(statusMsg, "ok");
+    }
+
     if (/\.pdf$/i.test(lower) || (file.type && file.type.indexOf("pdf") >= 0)) {
       state.mapRefKind = "pdf";
-      // Safari often fails blob: PDF inside iframe — prefer <object> with nested <embed> fallback
-      if (emb) {
-        emb.setAttribute("type", "application/pdf");
-        emb.src = url;
-      }
-      if (obj) {
-        obj.hidden = false;
-        obj.setAttribute("type", "application/pdf");
-        obj.data = url;
-      }
-      if (frame) {
-        // Keep iframe hidden; object/embed cover Safari. Link below always works.
-        frame.hidden = true;
-        frame.removeAttribute("src");
-      }
       if (openTab) {
         openTab.hidden = false;
         openTab.href = url;
         openTab.setAttribute("download", name);
         openTab.textContent = "新分頁開啟地圖 PDF";
       }
-    } else {
-      state.mapRefKind = "image";
-      if (img) {
-        img.hidden = false;
-        img.src = url;
-        img.alt = name;
-      }
-      if (openTab) {
-        openTab.hidden = false;
-        openTab.href = url;
-        openTab.removeAttribute("download");
-        openTab.textContent = "新分頁開啟地圖圖片";
-      }
+      // Prefer rasterized page-1 image so annotate % matches map pixels (same as PNG/JPG)
+      setImportStatus("正在將 PDF 轉成影像以便加樹…", "");
+      rasterizeMapRefPdf(url).then(function (ok) {
+        if (ok) {
+          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可開「加樹模式」）");
+          return;
+        }
+        // Fallback: native PDF viewer (less accurate for annotate)
+        if (emb) {
+          emb.setAttribute("type", "application/pdf");
+          emb.src = url;
+        }
+        if (obj) {
+          obj.hidden = false;
+          obj.setAttribute("type", "application/pdf");
+          obj.data = url;
+        }
+        if (frame) {
+          frame.hidden = true;
+          frame.removeAttribute("src");
+        }
+        if (img) {
+          img.hidden = true;
+          img.removeAttribute("src");
+        }
+        finishShow("已載入地圖參考：" + name + "（PDF 檢視器 · 建議改用 PNG／JPG 加樹）");
+      });
+      return;
     }
-    if (label) label.textContent = "地圖參考 · " + name;
-    // Always force-show after import so user sees PDF/image immediately
-    // (even if Leaflet demo trees / GPKG markers exist — toggle can switch back)
-    document.body.classList.add("force-map-ref");
-    state.mapRefMeta = { name: name, kind: state.mapRefKind };
-    updateMapRefVisibility();
-    renderAnnotOverlay();
-    updateMapRestoreHint();
-    schedulePersist();
-    setImportStatus("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」點擊加樹）", "ok");
+
+    state.mapRefKind = "image";
+    if (img) {
+      const onReady = function () {
+        img.removeEventListener("load", onReady);
+        syncAnnotLayerToContent();
+        renderAnnotOverlay();
+      };
+      img.addEventListener("load", onReady);
+      img.hidden = false;
+      img.src = url;
+      img.alt = name;
+      if (img.complete && img.naturalWidth) onReady();
+    }
+    if (openTab) {
+      openTab.hidden = false;
+      openTab.href = url;
+      openTab.removeAttribute("download");
+      openTab.textContent = "新分頁開啟地圖圖片";
+    }
+    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」點擊加樹）");
   }
 
   function clearMapRef() {
@@ -1222,8 +1448,13 @@
   function updatePdfHint() {
     const hint = $("map-annotate-pdf-hint");
     if (!hint) return;
-    const show = state.annotateMode && state.mapRefKind === "pdf" && document.body.classList.contains("has-map-ref");
+    // Hide when rasterized (accurate image layer) or not annotating — never block clicks
+    const nativePdf = state.mapRefKind === "pdf" && !state.mapRefRasterized;
+    const show = state.annotateMode && nativePdf && document.body.classList.contains("has-map-ref");
     hint.hidden = !show;
+    if (show) {
+      hint.textContent = "原生 PDF 點擊較粗 · 建議 PNG／JPG 或重新匯入以轉影像";
+    }
   }
 
   function updateAnnotUi() {
@@ -1231,8 +1462,8 @@
     if (hint) {
       if (state.annotateMode) {
         hint.textContent = state.idMode === "manual"
-          ? "手動編號：點地圖後輸入樹木 ID。短點標記選取；長按拖移位置。座標以檢視框 % 記錄。"
-          : "自動編號：點地圖依序 T1、T2…。短點標記選取；長按（筆／指）拖移。PNG／JPG 最佳。";
+          ? "手動編號：點地圖後輸入樹木 ID。短點選取；長按拖移。座標相對地圖內容 %（隨縮放黏住）。"
+          : "自動編號：點地圖依序 T1、T2…。短點選取；長按拖移。PNG／JPG 最佳；PDF 會轉影像頁。";
       } else {
         hint.textContent = "開啟「加樹模式」後，點地圖圖片或 Leaflet 放置樹木。PNG／JPG 地圖最合適。";
       }
@@ -1324,15 +1555,15 @@
       ensureLeafletAnnotLayer(map);
       const ll = L.latLng(tree.feature.geometry.coordinates[1], tree.feature.geometry.coordinates[0]);
       const marker = L.circleMarker(ll, {
-        radius: 7,
+        radius: 4.5,
         color: "#fbbf24",
-        weight: 1.5,
+        weight: 1,
         fillColor: "#f59e0b",
-        fillOpacity: 0.92,
+        fillOpacity: 0.95,
         className: "annot-leaflet-marker",
         bubblingMouseEvents: false
       });
-      marker.bindTooltip(String(tree.id), { permanent: true, direction: "top", offset: [0, -6], className: "annot-leaflet-label" });
+      marker.bindTooltip(String(tree.id), { permanent: false, direction: "top", offset: [0, -4], className: "annot-leaflet-label" });
       marker.feature = tree.feature;
       marker.on("click", function (e) {
         if (typeof L !== "undefined" && L.DomEvent) L.DomEvent.stopPropagation(e);
@@ -1414,6 +1645,7 @@
   function renderAnnotOverlay() {
     const layer = $("map-annotate-layer");
     if (!layer) return;
+    syncAnnotLayerToContent();
     let html = "";
     state.trees.forEach((t) => {
       if (t.x == null || t.y == null) return;
@@ -1434,9 +1666,28 @@
 
   function highlightAnnotMarker(treeId) {
     const layer = $("map-annotate-layer");
-    if (!layer) return;
-    Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
-      el.classList.toggle("on", treeId && String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase());
+    if (layer) {
+      Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
+        el.classList.toggle("on", treeId && String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase());
+      });
+    }
+    const want = treeId ? String(treeId).toUpperCase() : "";
+    state.trees.forEach((t) => {
+      if (!t.leafletMarker) return;
+      const on = !!(want && String(t.id).toUpperCase() === want);
+      try {
+        if (t.leafletMarker.setStyle) {
+          t.leafletMarker.setStyle({
+            radius: on ? 5 : 4.5,
+            weight: 1,
+            color: on ? "#93c5fd" : "#fbbf24",
+            fillColor: on ? "#3b82f6" : "#f59e0b",
+            fillOpacity: 0.95
+          });
+        }
+        if (on && t.leafletMarker.openTooltip) t.leafletMarker.openTooltip();
+        else if (t.leafletMarker.closeTooltip) t.leafletMarker.closeTooltip();
+      } catch (e) { /* ignore */ }
     });
   }
 
@@ -1774,6 +2025,11 @@
     if (layer) {
       bindAnnotOverlayPointers(layer);
     }
+    ensureAnnotLayerObserver();
+    syncAnnotLayerToContent();
+    window.addEventListener("resize", function () {
+      syncAnnotLayerToContent();
+    });
 
     const ok = $("btn-annot-id-ok");
     const cancel = $("btn-annot-id-cancel");
