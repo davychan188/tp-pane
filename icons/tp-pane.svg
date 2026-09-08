@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="tp-pane">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e3a2f"/>
+      <stop offset="100%" stop-color="#14241c"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#7dcea0"/>
+      <stop offset="100%" stop-color="#3f9a68"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded tile -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <!-- plan sheet (bottom-right motif) -->
+  <path d="M70 78h34a6 6 0 0 1 6 6v26a6 6 0 0 1-6 6H70a6 6 0 0 1-6-6V84a6 6 0 0 1 6-6z"
+        fill="#243f33" stroke="#c9a86c" stroke-width="2.5"/>
+  <path d="M74 88h26M74 96h22M74 104h18" stroke="#8fb89a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="96" cy="104" r="3.2" fill="#c9a86c"/>
+  <!-- tree -->
+  <rect x="42" y="78" width="10" height="28" rx="2.5" fill="#6b4a2e"/>
+  <ellipse cx="47" cy="70" rx="28" ry="18" fill="url(#leaf)"/>
+  <ellipse cx="47" cy="54" rx="22" ry="15" fill="#5fbf88"/>
+  <ellipse cx="47" cy="40" rx="15" ry="12" fill="#7dcea0"/>
+  <!-- small canopy highlight -->
+  <ellipse cx="40" cy="36" rx="5" ry="3.5" fill="#b8e6c8" opacity="0.55"/>
+</svg>

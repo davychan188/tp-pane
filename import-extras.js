@@ -1957,12 +1957,17 @@
     return out.length ? out : null;
   }
 
-  /** Simplify polyline in % space (min-distance thin + hard cap) for autosave size. */
+  /**
+   * High-fidelity path for committed ink (v79).
+   * Drop only true duplicates / sub-pixel jitter so live preview and committed stroke match.
+   * Soft safety cap is several thousand pts (was aggressive minDist 0.35% + hard 96-cap).
+   */
   function simplifyPath(pts, minDist) {
     pts = normalizePath(pts);
     if (!pts) return null;
     if (pts.length <= 2) return pts;
-    minDist = minDist == null ? 0.35 : minDist;
+    // Coords already toFixed(3) in normalizePath; 0.001 ≈ one quantum — keep handwriting.
+    minDist = minDist == null ? 0.001 : minDist;
     const out = [pts[0]];
     for (let i = 1; i < pts.length; i++) {
       const prev = out[out.length - 1];
@@ -1970,8 +1975,9 @@
       const d = Math.hypot(p.x - prev.x, p.y - prev.y);
       if (d >= minDist || i === pts.length - 1) out.push(p);
     }
-    if (out.length <= 96) return out;
-    const step = Math.ceil(out.length / 96);
+    const CAP = 8000; // prefer fidelity over autosave size (was 96)
+    if (out.length <= CAP) return out;
+    const step = Math.ceil(out.length / CAP);
     const capped = [];
     for (let i = 0; i < out.length; i += step) capped.push(out[i]);
     const last = out[out.length - 1];

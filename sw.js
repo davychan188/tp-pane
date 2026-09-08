@@ -1,4 +1,4 @@
-const CACHE = "gpkg-viewer-media-v78";
+const CACHE = "tp-pane-v80";
 const ASSETS = [
   "./index.html",
   "./styles.css",
@@ -13,6 +13,8 @@ const ASSETS = [
   "./vendor/leaflet.js",
   "./vendor/geopackage.min.js",
   "./vendor/sql-wasm.wasm",
+  "./icons/tp-pane.svg",
+  "./icons/favicon-32.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./offline/db-roads.json.gz",
