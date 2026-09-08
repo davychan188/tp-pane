@@ -706,12 +706,12 @@ body.table-collapsed .status { bottom: 12px; }
   grid-area: media;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  padding: 6px 8px;
+  padding: 4px 6px;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 body.media-layout .media-panel {
   display: flex;
@@ -912,19 +912,25 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
 }
 .media-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+  max-width: 7.5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 1 auto;
 }
 .media-badge {
   font-size: 10px;
@@ -948,11 +954,12 @@ body.media-layout.table-collapsed .feature-attrs {
   display: inline-flex;
   align-items: center;
   gap: 0;
-  margin-left: 8px;
+  margin-left: 4px;
   border: 1px solid #2a3550;
   border-radius: 999px;
   overflow: hidden;
   background: #121a2e;
+  flex: 0 0 auto;
 }
 .media-filter-btn {
   appearance: none;
@@ -961,7 +968,7 @@ body.media-layout.table-collapsed .feature-attrs {
   color: #9aa8c7;
   font-size: 10px;
   font-weight: 700;
-  padding: 3px 8px;
+  padding: 2px 7px;
   cursor: pointer;
   line-height: 1.2;
   white-space: nowrap;
@@ -1093,20 +1100,21 @@ body.media-layout.table-collapsed .feature-attrs {
 /* PDF-first media panel: large page viewer + page chips; photos optional */
 .media-pdf-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
+  padding-bottom: 0;
   flex: 0 0 auto;
+  min-height: 0;
 }
 .media-pdf-tabs[hidden] { display: none !important; }
 .media-pdf-tab {
   flex: 0 0 auto;
-  max-width: 160px;
-  min-height: 40px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 2px solid var(--line);
+  max-width: 72px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
   font-weight: 700;
@@ -1245,6 +1253,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
+/* v78: hide imported media names in chrome; tighten media-head/tabs for PDF */
 .media-nums {
   display: none !important;
 }

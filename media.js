@@ -145,12 +145,9 @@
     return ".jpg";
   }
 
+  /** Tab label without filename — maximize chrome for PDF content (v78). */
   function shortPdfLabel(name, index) {
-    const base = String(name || ("PDF " + (index + 1))).split(/[/\\]/).pop();
-    if (base.length <= 18) return base;
-    const dot = base.lastIndexOf(".");
-    if (dot > 8) return base.slice(0, 12) + "…" + base.slice(dot);
-    return base.slice(0, 15) + "…";
+    return "PDF " + (Number(index) + 1);
   }
 
   function photosForTree(treeId) {
@@ -523,7 +520,7 @@
       b.setAttribute("role", "tab");
       b.setAttribute("aria-selected", i === state.pdfIndex ? "true" : "false");
       b.textContent = shortPdfLabel(pdf.name, i);
-      b.title = pdf.name;
+      b.title = "PDF " + (i + 1);
       b.addEventListener("click", () => selectPdfIndex(i));
       tabs.appendChild(b);
     });
@@ -616,7 +613,8 @@
       openTab.title = "新分頁開啟目前第 " + pageNum + " 頁";
     }
     if (title) {
-      title.innerHTML = escapeHtml(pdf.name) + ' <span class="tag">頁</span>';
+      // v78: do not echo imported media filenames in panel chrome
+      title.innerHTML = '樹木 PDF <span class="tag">頁</span>';
     }
     updatePdfZoomLabel();
     renderPdfCanvas();
@@ -640,7 +638,7 @@
     renderPageChips();
     showPdfInFrame(page);
     const pdf = currentPdf();
-    setStatusHint("PDF 跳至第 " + page + " 頁" + (pdf ? (" · " + pdf.name) : ""));
+    setStatusHint("PDF 跳至第 " + page + " 頁");
   }
 
   function stepPdfPage(dir) {
@@ -1055,32 +1053,45 @@
     if (!box || box._attrEditBound) return;
     box._attrEditBound = true;
     let editedByPointer = 0;
+    let lastTouchTap = { t: 0, el: null };
     function tryEdit(e, el) {
       if (!el || !box.contains(el)) return;
       if (el.classList.contains("editing")) return;
       e.preventDefault();
       startAttrEdit(el);
     }
-    // Single tap/click on value → edit (mouse, Pencil, finger)
+    // v78: mouse/finger require double-click/double-tap; Apple Pencil may single-tap.
+    // Single finger tap must not open enlarge-edit (avoids scroll/pan accidents).
     box.addEventListener("click", (e) => {
       if (Date.now() - editedByPointer < 450) {
         e.preventDefault();
         return;
       }
-      const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
-      tryEdit(e, el);
+      // Mouse single-click: no edit (use dblclick). Touch handled via pointerup double-tap.
     });
     box.addEventListener("dblclick", (e) => {
       const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
       tryEdit(e, el);
     });
     box.addEventListener("pointerup", (e) => {
-      if (e.pointerType === "mouse") return; // click handles mouse
+      if (e.pointerType === "mouse") return; // dblclick handles mouse
       if (e.pointerType !== "pen" && e.pointerType !== "touch") return;
       const el = e.target && e.target.closest ? e.target.closest(".editable[data-attr-key]") : null;
       if (!el || !box.contains(el) || el.classList.contains("editing")) return;
-      editedByPointer = Date.now();
-      tryEdit(e, el);
+      if (e.pointerType === "pen") {
+        editedByPointer = Date.now();
+        tryEdit(e, el);
+        return;
+      }
+      // touch: require double-tap
+      const now = Date.now();
+      if (lastTouchTap.el === el && now - lastTouchTap.t < 400) {
+        lastTouchTap = { t: 0, el: null };
+        editedByPointer = now;
+        tryEdit(e, el);
+        return;
+      }
+      lastTouchTap = { t: now, el: el };
     });
   }
 

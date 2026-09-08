@@ -707,9 +707,11 @@
     if (!box || box._listEditBound) return;
     box._listEditBound = true;
 
-    // Single tap/click on a value field → inline edit (Pencil / finger / mouse).
-    // Tap on row chrome (not a field) → select only.
+    // v78: finger/mouse → double-tap/dblclick to edit; Apple Pencil → single tap.
+    // Single finger tap must not open enlarge-edit (avoids edit while scrolling).
+    // Tap on row chrome (not starting edit) → select only.
     let editedByPointer = 0;
+    let lastTouchTap = { t: 0, field: null };
     box.addEventListener("click", (e) => {
       const del = e.target.closest && e.target.closest(".tree-list-del");
       if (del) {
@@ -724,13 +726,8 @@
         e.stopPropagation();
         return;
       }
-      const field = e.target.closest && e.target.closest(".tree-list-field");
       const row = e.target.closest && e.target.closest(".tree-list-row");
-      if (field) {
-        e.preventDefault();
-        startTreeListFieldEdit(field);
-        return;
-      }
+      // Mouse/touch single click: select row only — edit via dblclick / pen / touch double-tap
       if (row) {
         const tid = row.getAttribute("data-tree-id");
         if (tid) selectTreeFromList(tid);
@@ -745,17 +742,30 @@
       startTreeListFieldEdit(field);
     });
 
-    // Pen / touch: open edit on pointerup (do not require double-tap)
+    // Pen: single tap may edit. Touch: require double-tap.
     box.addEventListener("pointerup", (e) => {
-      if (e.pointerType === "mouse") return; // click handles mouse
+      if (e.pointerType === "mouse") return; // dblclick handles mouse
       if (e.pointerType !== "pen" && e.pointerType !== "touch") return;
       const field = e.target.closest && e.target.closest(".tree-list-field");
       if (!field || !box.contains(field)) return;
       if (field.classList.contains("editing")) return;
       if (e.target.closest && e.target.closest(".tree-list-input")) return;
-      editedByPointer = Date.now();
-      e.preventDefault();
-      startTreeListFieldEdit(field);
+      if (e.pointerType === "pen") {
+        editedByPointer = Date.now();
+        e.preventDefault();
+        startTreeListFieldEdit(field);
+        return;
+      }
+      // touch: double-tap only
+      const now = Date.now();
+      if (lastTouchTap.field === field && now - lastTouchTap.t < 400) {
+        lastTouchTap = { t: 0, field: null };
+        editedByPointer = now;
+        e.preventDefault();
+        startTreeListFieldEdit(field);
+        return;
+      }
+      lastTouchTap = { t: now, field: field };
     });
   }
 
