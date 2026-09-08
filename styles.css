@@ -1896,18 +1896,18 @@ body.annotate-mode.has-map-ref #map {
   transform: translate(-50%, -50%);
   border: 0;
   background: transparent;
-  /* Generous hit area for Apple Pencil / finger */
-  padding: 12px;
-  margin: -12px;
-  min-width: 44px;
-  min-height: 44px;
+  /* Invisible ~44px Pencil/finger hit pad — padding only, no visible bulk */
+  padding: 15px;
+  margin: -15px;
+  min-width: 0;
+  min-height: 0;
   cursor: pointer;
   z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   pointer-events: auto;
   touch-action: none; /* long-press drag handled in JS */
   -webkit-tap-highlight-color: transparent;
@@ -1915,8 +1915,8 @@ body.annotate-mode.has-map-ref #map {
   user-select: none;
 }
 .annot-marker.pressing .annot-marker-dot {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.45);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.5);
 }
 .annot-marker.dragging {
   z-index: 20;
@@ -1924,36 +1924,39 @@ body.annotate-mode.has-map-ref #map {
   opacity: 0.95;
 }
 .annot-marker.dragging .annot-marker-dot {
-  transform: scale(1.35);
+  transform: scale(1.12);
   background: #3b82f6;
   border-color: #fff;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
 }
 .annot-marker-dot {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #f59e0b;
-  border: 2px solid #fef3c7;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  border: 1.5px solid #fef3c7;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 .annot-marker:active .annot-marker-dot {
-  transform: scale(1.15);
+  transform: scale(1.08);
 }
 .annot-marker-label {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 1.2;
   color: #0a0f1c;
   background: #fbbf24;
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 0 3px;
+  border-radius: 3px;
   white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .annot-marker.on .annot-marker-dot {
   background: #3b82f6;
   border-color: #fff;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.65);
 }
 .annot-marker.on .annot-marker-label {
   background: #60a5fa;
@@ -2048,10 +2051,12 @@ body.has-map-ref .annot-float-bar {
   background: #fbbf24 !important;
   border: 0 !important;
   color: #0a0f1c !important;
+  font-size: 9px !important;
   font-weight: 700 !important;
-  padding: 1px 5px !important;
-  border-radius: 4px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  line-height: 1.2 !important;
+  padding: 0 3px !important;
+  border-radius: 3px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .annot-leaflet-label::before {
   border-top-color: #fbbf24 !important;

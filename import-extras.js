@@ -325,7 +325,7 @@
         }
         if (t.leafletMarker.unbindTooltip) t.leafletMarker.unbindTooltip();
         t.leafletMarker.bindTooltip(String(newId), {
-          permanent: true, direction: "top", offset: [0, -8], className: "annot-leaflet-label"
+          permanent: true, direction: "top", offset: [0, -6], className: "annot-leaflet-label"
         });
       } catch (_) {}
     }
@@ -1324,15 +1324,15 @@
       ensureLeafletAnnotLayer(map);
       const ll = L.latLng(tree.feature.geometry.coordinates[1], tree.feature.geometry.coordinates[0]);
       const marker = L.circleMarker(ll, {
-        radius: 9,
+        radius: 7,
         color: "#fbbf24",
-        weight: 2,
+        weight: 1.5,
         fillColor: "#f59e0b",
-        fillOpacity: 0.9,
+        fillOpacity: 0.92,
         className: "annot-leaflet-marker",
         bubblingMouseEvents: false
       });
-      marker.bindTooltip(String(tree.id), { permanent: true, direction: "top", offset: [0, -8], className: "annot-leaflet-label" });
+      marker.bindTooltip(String(tree.id), { permanent: true, direction: "top", offset: [0, -6], className: "annot-leaflet-label" });
       marker.feature = tree.feature;
       marker.on("click", function (e) {
         if (typeof L !== "undefined" && L.DomEvent) L.DomEvent.stopPropagation(e);
