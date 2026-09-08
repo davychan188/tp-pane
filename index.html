@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=60" />
-  <link rel="stylesheet" href="styles.css?v=60" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=61" />
+  <link rel="stylesheet" href="styles.css?v=61" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -39,9 +39,9 @@
         匯入地圖 PDF
         <input id="map-ref-file-input" type="file" accept=".pdf,image/*,application/pdf" hidden />
       </label>
-      <label class="btn" id="btn-pick-media" title="選擇相片與 PDF">
+      <label class="btn" id="btn-pick-media" title="選擇相片與 PDF（可從相簿／檔案；唔使對應樹木）">
         媒體資料夾
-        <input id="media-file-input" type="file" accept="image/*,.pdf,application/pdf" multiple hidden />
+        <input id="media-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple />
       </label>
       <button class="btn" id="btn-fit" type="button">Fit</button>
       <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="Hide photo panel">隱藏相片</button>
@@ -133,10 +133,10 @@
 
     <div class="settings-card">
       <div class="card-title">媒體 Media</div>
-      <p class="hint" style="margin:0">相片檔名需為 <b>樹木編號_說明.jpg</b>（例如 T1_defect.jpg）。可用 PhotoRenamer 批次改名。</p>
+      <p class="hint" style="margin:0">媒體可獨立匯入，唔使對應地圖／清單。可選檔名前綴（如 <b>T1_defect.jpg</b>）方便「只顯示呢棵樹」。</p>
       <label class="btn full" style="position:relative;overflow:hidden">
         選擇相片／PDF
-        <input id="media-file-input-side" type="file" accept="image/*,.pdf,application/pdf" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
+        <input id="media-file-input-side" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <button class="btn full" id="btn-media-clear" type="button">清除媒體</button>
       <div class="hint" id="media-status">尚未載入媒體 — 請按「媒體資料夾」或側欄選擇相片／PDF</div>
@@ -272,6 +272,10 @@
     <div class="media-head">
       <h2>樹木照片 Photos <span class="tag">直放 · 每次一張</span></h2>
       <span class="media-badge" id="media-source-badge" hidden>未載入</span>
+      <div class="media-filter-toggle" role="group" aria-label="媒體顯示模式">
+        <button type="button" class="media-filter-btn on" id="media-filter-all" title="顯示全部已匯入媒體">全部媒體</button>
+        <button type="button" class="media-filter-btn" id="media-filter-tree" title="只顯示檔名符合已選樹木嘅媒體">只顯示呢棵樹</button>
+      </div>
       <span class="media-tree-hint" id="media-tree-hint">未選樹木</span>
     </div>
     <div class="media-viewer" id="media-viewer">
@@ -279,7 +283,7 @@
       <div class="media-frame" id="media-frame">
         <img id="media-img" alt="" hidden />
         <div class="media-slide" id="media-slide" hidden>相片</div>
-        <div class="media-empty" id="media-empty">點選地圖上的樹木以顯示相片</div>
+        <div class="media-empty" id="media-empty">尚未載入媒體 — 請按「媒體資料夾」選相片／PDF</div>
       </div>
       <button class="media-nav next" type="button" id="media-next" aria-label="下一張">›</button>
       <div class="zoom-ctrls media-zoom-ctrls" role="group" aria-label="相片縮放">
@@ -315,11 +319,11 @@
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=60"></script>
-  <script src="vendor/geopackage.min.js?v=60"></script>
-  <script src="vendor/xlsx.full.min.js?v=60"></script>
-  <script src="media.js?v=60"></script>
-  <script src="import-extras.js?v=60"></script>
-  <script src="app.js?v=60"></script>
+  <script src="vendor/leaflet.js?v=61"></script>
+  <script src="vendor/geopackage.min.js?v=61"></script>
+  <script src="vendor/xlsx.full.min.js?v=61"></script>
+  <script src="media.js?v=61"></script>
+  <script src="import-extras.js?v=61"></script>
+  <script src="app.js?v=61"></script>
 </body>
 </html>

@@ -924,6 +924,47 @@ body.media-layout.table-collapsed .feature-attrs {
   color: var(--muted);
   font-weight: 600;
 }
+.media-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 8px;
+  border: 1px solid #2a3550;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #121a2e;
+}
+.media-filter-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #9aa8c7;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.media-filter-btn.on {
+  background: #2b3f78;
+  color: #e8eeff;
+}
+.media-filter-btn:focus-visible {
+  outline: 2px solid #7aa2ff;
+  outline-offset: -2px;
+}
+@media (max-width: 900px) {
+  .media-filter-toggle {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    margin-top: 4px;
+  }
+  .media-tree-hint {
+    margin-left: 0;
+  }
+}
 
 .media-viewer {
   position: relative;
@@ -1180,6 +1221,10 @@ body.media-layout.pdf-focus #btn-pdf-focus-close {
   opacity: 0;
   cursor: pointer;
   font-size: 40px;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Do not use [hidden]/display:none — breaks Android/iOS label picking */
 }
 
 /* iPad mini / tablet landscape: ~50% map+attrs | ~50% media, sidebar as drawer */

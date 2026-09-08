@@ -1,6 +1,7 @@
 /**
- * Media panel: portrait photo viewer + PDF page chips.
- * Matches photos by tree ID prefix (e.g. T1 → T1_*.jpg).
+ * Media panel: portrait photo viewer + PDF chips.
+ * Independent media library by default (no tree / T1_* required).
+ * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
  */
 (function () {
@@ -53,6 +54,8 @@
     pdfPage: null,
     pdfTotal: 20,
     relatedPages: [],
+    pdfChipMode: "docs", // "docs" = one chip per PDF file; "pages" = demo page chips
+    filterMode: "all",   // "all" | "tree" — default show all imported media
     demoMode: false,
     objectUrls: [],
     photoZoom: { scale: 1, x: 0, y: 0 },
@@ -98,17 +101,75 @@
   }
 
   function isImageName(name) {
-    return /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(name || "");
+    return /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(name || "");
   }
 
   function isPdfName(name) {
     return /\.pdf$/i.test(name || "");
   }
 
+  function isImageFile(file) {
+    if (!file) return false;
+    const t = String(file.type || "").toLowerCase();
+    if (t.indexOf("image/") === 0) return true;
+    return isImageName(file.name);
+  }
+
+  function isPdfFile(file) {
+    if (!file) return false;
+    const t = String(file.type || "").toLowerCase();
+    if (t === "application/pdf" || t === "application/x-pdf") return true;
+    return isPdfName(file.name);
+  }
+
+  function displayFileName(file, index, kind) {
+    const raw = (file && file.name) ? String(file.name).split(/[/\\]/).pop() : "";
+    if (raw && raw !== "image" && raw !== "blob") return raw;
+    const ext = kind === "pdf" ? ".pdf" : guessImageExt(file);
+    return (kind === "pdf" ? "document" : "photo") + "_" + String(index + 1).padStart(3, "0") + ext;
+  }
+
+  function guessImageExt(file) {
+    const t = String((file && file.type) || "").toLowerCase();
+    if (t.indexOf("png") >= 0) return ".png";
+    if (t.indexOf("webp") >= 0) return ".webp";
+    if (t.indexOf("gif") >= 0) return ".gif";
+    if (t.indexOf("heic") >= 0 || t.indexOf("heif") >= 0) return ".heic";
+    return ".jpg";
+  }
+
+  function shortPdfLabel(name, index) {
+    const base = String(name || ("PDF " + (index + 1))).split(/[/\\]/).pop();
+    if (base.length <= 18) return base;
+    const dot = base.lastIndexOf(".");
+    if (dot > 8) return base.slice(0, 12) + "…" + base.slice(dot);
+    return base.slice(0, 15) + "…";
+  }
+
   function photosForTree(treeId) {
     const id = normalizeTreeId(treeId);
     if (!id) return [];
     return state.photos.filter((p) => p.treeId === id);
+  }
+
+  /** Visible photo list: default = all imported; optional tree filter. */
+  function activePhotos() {
+    if (state.filterMode === "tree") {
+      if (!state.treeId) return [];
+      return photosForTree(state.treeId);
+    }
+    return state.photos;
+  }
+
+  function setFilterMode(mode) {
+    state.filterMode = (mode === "tree") ? "tree" : "all";
+    state.photoIndex = 0;
+    const allBtn = $("media-filter-all");
+    const treeBtn = $("media-filter-tree");
+    if (allBtn) allBtn.classList.toggle("on", state.filterMode === "all");
+    if (treeBtn) treeBtn.classList.toggle("on", state.filterMode === "tree");
+    renderPhoto();
+    updatePdfLibrary();
   }
 
   function setStatusHint(msg) {
@@ -223,7 +284,7 @@
   }
 
   function renderPhoto() {
-    const list = photosForTree(state.treeId);
+    const list = activePhotos();
     const slide = $("media-slide");
     const img = $("media-img");
     const fname = $("media-fname");
@@ -237,9 +298,15 @@
       if (img) { img.hidden = true; img.removeAttribute("src"); img.style.transform = ""; }
       if (empty) {
         empty.hidden = false;
-        empty.textContent = state.treeId
-          ? ("沒有符合 " + state.treeId + " 的相片（檔名需為 " + state.treeId + "_…）")
-          : "點選地圖上的樹木以顯示相片";
+        if (!state.photos.length) {
+          empty.textContent = "尚未載入媒體 — 請按「媒體資料夾」選相片／PDF";
+        } else if (state.filterMode === "tree" && state.treeId) {
+          empty.textContent = "沒有符合 " + state.treeId + " 的相片（可改「全部媒體」，或檔名用 " + state.treeId + "_…）";
+        } else if (state.filterMode === "tree" && !state.treeId) {
+          empty.textContent = "「只顯示呢棵樹」模式下請先點選樹木，或改回「全部媒體」";
+        } else {
+          empty.textContent = "沒有可顯示的相片";
+        }
       }
       if (fname) fname.textContent = "—";
       if (pcnt) pcnt.textContent = "0 / 0";
@@ -276,7 +343,7 @@
 
     const pages = state.relatedPages || [];
     if (!pages.length) {
-      if (pageNow) pageNow.textContent = state.treeId ? "此樹暫無 PDF 頁" : "—";
+      if (pageNow) pageNow.textContent = state.pdfs.length ? "—" : "未匯入 PDF";
       if (pdfTitle) pdfTitle.textContent = "相關 PDF";
       const scroll = $("media-pdf-scroll");
       const openTab = $("media-pdf-open-tab");
@@ -290,18 +357,37 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "media-num" + (n === state.pdfPage ? " on" : "");
-      b.textContent = "#" + String(n).padStart(2, "0");
-      b.setAttribute("aria-label", "第 " + n + " 頁");
+      if (state.pdfChipMode === "docs") {
+        const pdf = state.pdfs[n - 1];
+        b.textContent = pdf ? shortPdfLabel(pdf.name, n - 1) : ("#" + String(n).padStart(2, "0"));
+        b.title = pdf ? pdf.name : ("PDF " + n);
+        b.setAttribute("aria-label", "開啟 PDF " + (pdf ? pdf.name : n));
+      } else {
+        b.textContent = "#" + String(n).padStart(2, "0");
+        b.setAttribute("aria-label", "第 " + n + " 頁");
+      }
       b.addEventListener("click", () => jumpToPdfPage(n));
       nums.appendChild(b);
     });
 
-    if (pageNow) {
-      pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
-    }
-    if (pdfTitle) {
-      const pdfName = state.pdfs[0] ? state.pdfs[0].name : "PDF";
-      pdfTitle.textContent = "相關 PDF · " + pdfName;
+    if (state.pdfChipMode === "docs") {
+      const cur = state.pdfs[(state.pdfPage || 1) - 1];
+      if (pageNow) {
+        pageNow.textContent = cur
+          ? ((state.pdfPage || 1) + " / " + state.pdfTotal + " · " + cur.name)
+          : (state.pdfs.length + " 個 PDF");
+      }
+      if (pdfTitle) {
+        pdfTitle.textContent = cur ? ("相關 PDF · " + cur.name) : ("相關 PDF · " + state.pdfs.length + " 個");
+      }
+    } else {
+      if (pageNow) {
+        pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
+      }
+      if (pdfTitle) {
+        const pdfName = state.pdfs[0] ? state.pdfs[0].name : "PDF";
+        pdfTitle.textContent = "相關 PDF · " + pdfName;
+      }
     }
   }
 
@@ -311,14 +397,21 @@
     const frame = $("media-pdf-frame");
     const scroll = $("media-pdf-scroll");
     const openTab = $("media-pdf-open-tab");
-    const pdf = state.pdfs[0];
-    if (frame && pdf && pdf.url) {
+    let pdf = null;
+    let src = null;
+    if (state.pdfChipMode === "docs") {
+      pdf = state.pdfs[n - 1];
+      if (pdf && pdf.url) src = pdf.url;
+    } else {
+      pdf = state.pdfs[0];
+      if (pdf && pdf.url) src = pdf.url + "#page=" + n;
+    }
+    if (frame && pdf && src) {
       if (scroll) scroll.hidden = false;
-      // PDF open parameters: page via hash (works in many browsers)
-      frame.src = pdf.url + "#page=" + n;
+      frame.src = src;
       if (openTab) {
         openTab.hidden = false;
-        openTab.href = pdf.url + "#page=" + n;
+        openTab.href = src;
         openTab.setAttribute("download", pdf.name || "report.pdf");
       }
       enterPdfFocus();
@@ -328,35 +421,41 @@
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
       exitPdfFocus();
     }
-    setStatusHint("PDF 跳至第 " + n + " 頁" + (pdf ? "" : "（示範）"));
+    if (state.pdfChipMode === "docs") {
+      setStatusHint(pdf ? ("開啟 PDF：" + pdf.name) : "PDF");
+    } else {
+      setStatusHint("PDF 跳至第 " + n + " 頁" + (pdf ? "" : "（示範）"));
+    }
+  }
+
+  /** Rebuild PDF chips from full imported set (tree optional; demo may use page chips). */
+  function updatePdfLibrary() {
+    const id = normalizeTreeId(state.treeId);
+    const demo = state.demoMode && id && DEMO_TREE_PAGES[id] && state.filterMode === "tree";
+    if (demo) {
+      const d = DEMO_TREE_PAGES[id];
+      state.pdfChipMode = "pages";
+      state.relatedPages = d.pages.slice();
+      state.pdfPage = d.current;
+      state.pdfTotal = d.total;
+    } else if (state.pdfs.length) {
+      state.pdfChipMode = "docs";
+      state.relatedPages = state.pdfs.map((_, i) => i + 1);
+      if (!state.pdfPage || state.pdfPage > state.pdfs.length) state.pdfPage = 1;
+      state.pdfTotal = state.pdfs.length;
+    } else {
+      state.pdfChipMode = "docs";
+      state.relatedPages = [];
+      state.pdfPage = null;
+      state.pdfTotal = 0;
+    }
+    renderPdfChips();
   }
 
   function updatePdfForTree(treeId) {
-    const id = normalizeTreeId(treeId);
-    const demo = id && DEMO_TREE_PAGES[id];
-    if (demo) {
-      state.relatedPages = demo.pages.slice();
-      state.pdfPage = demo.current;
-      state.pdfTotal = demo.total;
-    } else if (id && state.pdfs.length) {
-      // Real files: show sequential chips as document indices, fake page jump by hash
-      // Prefer demo-like page list derived from tree number when possible
-      const num = parseInt(String(id).replace(/\D/g, ""), 10);
-      if (num && !isNaN(num)) {
-        const start = Math.max(1, ((num - 1) % 15) + 1);
-        state.relatedPages = [start, start + 1, start + 2].filter((p) => p <= 20);
-        state.pdfPage = start;
-        state.pdfTotal = 20;
-      } else {
-        state.relatedPages = state.pdfs.map((_, i) => i + 1);
-        state.pdfPage = 1;
-        state.pdfTotal = Math.max(state.pdfs.length, 1);
-      }
-    } else {
-      state.relatedPages = [];
-      state.pdfPage = null;
-    }
-    renderPdfChips();
+    // Keep API: tree change may switch demo page chips when filter=tree
+    if (treeId != null) state.treeId = normalizeTreeId(treeId);
+    updatePdfLibrary();
   }
 
   function aliasHit(props, aliases) {
@@ -581,7 +680,8 @@
   function setSelectedTree(treeId, props) {
     const id = normalizeTreeId(treeId);
     state.treeId = id;
-    state.photoIndex = 0;
+    // Keep photo index when browsing "all"; reset when tree-filtered
+    if (state.filterMode === "tree") state.photoIndex = 0;
 
     let useProps = props;
     if ((!useProps || !Object.keys(useProps).filter((k) => k.charAt(0) !== "_").length) && id && DEMO_ATTRS[id]) {
@@ -591,17 +691,23 @@
     if (useProps) ensureCanonicalMetrics(useProps);
 
     const hint = $("media-tree-hint");
-    if (hint) hint.textContent = id ? ("已選 " + id) : "未選樹木";
+    if (hint) {
+      if (id) {
+        hint.textContent = state.filterMode === "tree" ? ("已選 " + id + " · 篩選中") : ("已選 " + id);
+      } else {
+        hint.textContent = "未選樹木";
+      }
+    }
 
     exitPdfFocus();
     renderFeatureAttrs(useProps || null, id);
     resetPdfZoom();
     renderPhoto();
-    updatePdfForTree(id);
+    updatePdfLibrary();
   }
 
   function stepPhoto(dir) {
-    const list = photosForTree(state.treeId);
+    const list = activePhotos();
     if (!list.length) return;
     state.photoIndex = (state.photoIndex + dir + list.length) % list.length;
     renderPhoto();
@@ -609,47 +715,88 @@
 
   function ingestFiles(fileList) {
     const files = Array.from(fileList || []);
-    if (!files.length) return;
+    if (!files.length) {
+      setStatusHint("未選擇檔案（0 個）— 請再試「媒體資料夾」，並允許相簿／檔案存取");
+      return;
+    }
 
-    revokeAll();
-    state.photos = [];
-    state.pdfs = [];
-    state.demoMode = false;
+    let nImg = 0;
+    let nPdf = 0;
+    let nSkip = 0;
+    const nextPhotos = [];
+    const nextPdfs = [];
+    const nextUrls = [];
 
-    files.forEach((file) => {
-      const name = file.name || "file";
-      if (isImageName(name)) {
-        const url = rememberUrl(URL.createObjectURL(file));
-        state.photos.push({
-          name: name,
-          url: url,
-          treeId: treeIdFromFileName(name),
-          file: file
-        });
-      } else if (isPdfName(name)) {
-        const url = rememberUrl(URL.createObjectURL(file));
-        state.pdfs.push({ name: name, url: url, file: file });
+    function keepUrl(url) {
+      if (url && url.indexOf("blob:") === 0) nextUrls.push(url);
+      return url;
+    }
+
+    files.forEach((file, index) => {
+      try {
+        if (isImageFile(file)) {
+          const name = displayFileName(file, index, "image");
+          const url = keepUrl(URL.createObjectURL(file));
+          nextPhotos.push({
+            name: name,
+            url: url,
+            treeId: treeIdFromFileName(name),
+            file: file
+          });
+          nImg += 1;
+        } else if (isPdfFile(file)) {
+          const name = displayFileName(file, index, "pdf");
+          const url = keepUrl(URL.createObjectURL(file));
+          nextPdfs.push({ name: name, url: url, file: file });
+          nPdf += 1;
+        } else {
+          nSkip += 1;
+        }
+      } catch (err) {
+        nSkip += 1;
+        console.warn("[media] skip file", file && file.name, err);
       }
     });
 
+    if (!nImg && !nPdf) {
+      setStatusHint(
+        "匯入失敗：已選 " + files.length + " 個檔，但沒有相片／PDF" +
+        (nSkip ? ("（略過 " + nSkip + "）") : "") +
+        "。請選 JPG／PNG／WEBP／PDF（相簿或檔案 App）"
+      );
+      return;
+    }
+
+    revokeAll();
+    state.objectUrls = nextUrls;
+    state.photos = nextPhotos;
+    state.pdfs = nextPdfs;
+    state.demoMode = false;
+    state.photoIndex = 0;
+    state.pdfPage = 1;
+    // Default: show everything just imported (independent of tree selection)
+    state.filterMode = "all";
+    const allBtn = $("media-filter-all");
+    const treeBtn = $("media-filter-tree");
+    if (allBtn) allBtn.classList.toggle("on", true);
+    if (treeBtn) treeBtn.classList.toggle("on", false);
+
     state.photos.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    const nImg = state.photos.length;
-    const nPdf = state.pdfs.length;
-    setStatusHint("已載入 " + nImg + " 張相片、" + nPdf + " 個 PDF（僅本機）");
+    let msg = "已載入 " + nImg + " 張相片、" + nPdf + " 個 PDF（僅本機，可唔對應樹木）";
+    if (nSkip) msg += "；略過 " + nSkip + " 個非媒體檔";
+    setStatusHint(msg);
+    if (window.GpkgViewer && typeof window.GpkgViewer.setStatus === "function") {
+      window.GpkgViewer.setStatus(msg, "ok");
+    }
     const badge = $("media-source-badge");
     if (badge) {
-      badge.textContent = "本機資料夾";
+      badge.textContent = "本機 " + (nImg + nPdf);
       badge.classList.remove("demo");
       badge.hidden = false;
     }
-    if (state.treeId) {
-      state.photoIndex = 0;
-      renderPhoto();
-      updatePdfForTree(state.treeId);
-    } else {
-      renderPhoto();
-      renderPdfChips();
-    }
+    exitPdfFocus();
+    renderPhoto();
+    updatePdfLibrary();
   }
 
   async function loadDemoMedia() {
@@ -701,12 +848,22 @@
       badge.hidden = false;
     }
     setStatusHint("示範媒體已載入（?demo=1）— 可改為選擇本機相片／PDF 資料夾");
-    if (state.treeId) {
-      renderPhoto();
-      updatePdfForTree(state.treeId);
-    } else {
-      setSelectedTree("T1", DEMO_ATTRS.T1);
+    state.filterMode = "all";
+    const allBtn = $("media-filter-all");
+    const treeBtn = $("media-filter-tree");
+    if (allBtn) allBtn.classList.toggle("on", true);
+    if (treeBtn) treeBtn.classList.toggle("on", false);
+    state.photoIndex = 0;
+    if (!state.treeId) {
+      // Still seed attrs for demo convenience, but media shows all
+      state.treeId = "T1";
+      renderFeatureAttrs(Object.assign({}, DEMO_ATTRS.T1), "T1");
+      const hint = $("media-tree-hint");
+      if (hint) hint.textContent = "已選 T1";
     }
+    exitPdfFocus();
+    renderPhoto();
+    updatePdfLibrary();
   }
 
   function bindPhotoGestures(viewer) {
@@ -885,9 +1042,21 @@
     const mediaInput = $("media-file-input");
     if (mediaInput) {
       mediaInput.addEventListener("change", () => {
-        if (mediaInput.files && mediaInput.files.length) ingestFiles(mediaInput.files);
+        try {
+          if (mediaInput.files && mediaInput.files.length) ingestFiles(mediaInput.files);
+          else setStatusHint("未選擇檔案（0 個）— 請再試或檢查相簿權限");
+        } catch (err) {
+          setStatusHint("匯入出錯：" + (err && err.message ? err.message : String(err)));
+        }
+        // Allow re-picking the same files
+        try { mediaInput.value = ""; } catch (e) { /* ignore */ }
       });
     }
+
+    const filterAll = $("media-filter-all");
+    const filterTree = $("media-filter-tree");
+    if (filterAll) filterAll.addEventListener("click", () => setFilterMode("all"));
+    if (filterTree) filterTree.addEventListener("click", () => setFilterMode("tree"));
 
     // Optional: deep-link / leftover id only (toolbar demo buttons removed)
     const btnDemo = $("btn-media-demo");
@@ -900,6 +1069,9 @@
         state.photos = [];
         state.pdfs = [];
         state.demoMode = false;
+        state.photoIndex = 0;
+        state.relatedPages = [];
+        state.pdfPage = null;
         const badge = $("media-source-badge");
         if (badge) {
           badge.textContent = "未載入";
@@ -909,7 +1081,7 @@
         exitPdfFocus();
         setStatusHint("已清除媒體");
         renderPhoto();
-        renderPdfChips();
+        updatePdfLibrary();
       });
     }
 
@@ -944,9 +1116,10 @@
     });
 
     // Do not auto-load demo media in primary UI; use ?demo=1 (app.js) for samples.
-    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」或側欄選擇相片／PDF");
+    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」選相片／PDF（可唔對應地圖／清單）");
+    setFilterMode("all");
     renderPhoto();
-    renderPdfChips();
+    updatePdfLibrary();
   }
 
   window.GpkgMedia = {
@@ -954,6 +1127,7 @@
     ingestFiles: ingestFiles,
     loadDemoMedia: loadDemoMedia,
     normalizeTreeId: normalizeTreeId,
+    setFilterMode: setFilterMode,
     demoAttrs: DEMO_ATTRS,
     getState: function () { return state; }
   };

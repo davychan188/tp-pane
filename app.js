@@ -3186,7 +3186,13 @@
   const sideMedia = $("media-file-input-side");
   if (sideMedia && window.GpkgMedia) {
     sideMedia.addEventListener("change", () => {
-      if (sideMedia.files && sideMedia.files.length) window.GpkgMedia.ingestFiles(sideMedia.files);
+      try {
+        if (sideMedia.files && sideMedia.files.length) window.GpkgMedia.ingestFiles(sideMedia.files);
+        else setStatus("未選擇媒體檔案（0 個）", "warn");
+      } catch (err) {
+        setStatus("媒體匯入出錯：" + (err && err.message ? err.message : String(err)), "err");
+      }
+      try { sideMedia.value = ""; } catch (e) { /* ignore */ }
     });
   }
 
