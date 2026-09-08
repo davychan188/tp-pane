@@ -838,6 +838,9 @@ body.media-layout.table-collapsed .feature-attrs {
 .feature-attr-table td.editable.editing,
 .feature-metric-value.editable.editing {
   padding: 0 4px;
+  position: relative;
+  z-index: 20;
+  overflow: visible;
 }
 .feature-attr-table td.editable input,
 .feature-metric-value.editable input {
@@ -849,6 +852,16 @@ body.media-layout.table-collapsed .feature-attrs {
   border: 1px solid var(--accent, #5b8cff);
   border-radius: 6px;
   padding: 4px 6px;
+}
+.feature-attr-table td.editable.editing input,
+.feature-metric-value.editable.editing input {
+  min-height: 52px;
+  font-size: 18px;
+  line-height: 1.35;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-width: 2px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 .feature-metrics {
   display: grid;
@@ -1599,6 +1612,8 @@ body.has-tree-list .tree-list-panel,
   border-style: solid;
   border-color: var(--accent);
   overflow: visible;
+  position: relative;
+  z-index: 30;
 }
 .tree-list-input {
   width: 100%;
@@ -1612,6 +1627,35 @@ body.has-tree-list .tree-list-panel,
   background: #0b1220;
   color: var(--text);
   box-sizing: border-box;
+}
+/* Enlarge focused/editing cell for Pencil / finger handwriting */
+.tree-list-field.editing .tree-list-input {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: max(100%, 160px);
+  min-width: 160px;
+  min-height: 52px;
+  font-size: 18px;
+  line-height: 1.35;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  background: #0b1220;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(91, 140, 255, 0.35);
+  z-index: 31;
+}
+.tree-list-field.editing.tree-list-remarks .tree-list-input,
+.tree-list-field.editing.tree-list-sp .tree-list-input {
+  width: max(100%, 220px);
+  min-width: 220px;
+  min-height: 64px;
+}
+.tree-list-field.editing.tree-list-num .tree-list-input {
+  width: max(100%, 96px);
+  min-width: 96px;
+  text-align: right;
 }
 .tree-list-xy {
   padding: 6px 8px;
@@ -1896,27 +1940,31 @@ body.annotate-mode.has-map-ref #map {
 }
 
 .annot-marker {
+  /* Fixed hit box; translate centers the DOT on left%/top% (no padding/margin hit-pad —
+     negative margin + absolute left/top shifts the visual tip by ~padding px). */
   position: absolute;
+  width: 28px;
+  height: 28px;
   transform: translate(-50%, -50%);
   border: 0;
   background: transparent;
-  /* Modest ~28px hit pad via transparent padding — visual stays ~9px */
-  padding: 9px;
-  margin: -9px;
-  min-width: 0;
-  min-height: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 28px;
+  min-height: 28px;
   cursor: pointer;
   z-index: 2;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   pointer-events: auto;
   touch-action: none; /* long-press drag handled in JS */
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
+  overflow: visible;
+  box-sizing: border-box;
 }
 .annot-marker.pressing .annot-marker-dot {
   transform: scale(1.15);
@@ -1946,7 +1994,12 @@ body.annotate-mode.has-map-ref #map {
   transform: scale(1.1);
 }
 .annot-marker-label {
+  /* Absolutely below the hit box so showing the label never shifts the dot */
   display: none;
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 7px);
+  transform: translateX(-50%);
   font-size: 8px;
   font-weight: 700;
   line-height: 1.15;

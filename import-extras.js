@@ -1001,9 +1001,24 @@
       layer.style.height = "100%";
       return;
     }
-    const box = containBox(sw, sh, media.naturalWidth, media.naturalHeight);
-    layer.style.left = box.left.toFixed(2) + "px";
-    layer.style.top = box.top.toFixed(2) + "px";
+    // Prefer the img element's layout box inside the stage (not assuming it fills stage),
+    // then object-fit:contain letterbox within that box — same space markers/% use.
+    const iw = media.clientWidth || sw;
+    const ih = media.clientHeight || sh;
+    let il = 0;
+    let it = 0;
+    if (media.offsetParent === stage) {
+      il = media.offsetLeft || 0;
+      it = media.offsetTop || 0;
+    } else {
+      // Fallback: compare untransformed layout via client rects only when scale≈1;
+      // otherwise keep stage-relative 0,0 if sizes match.
+      il = Math.max(0, Math.round((sw - iw) / 2));
+      it = Math.max(0, Math.round((sh - ih) / 2));
+    }
+    const box = containBox(iw, ih, media.naturalWidth, media.naturalHeight);
+    layer.style.left = (il + box.left).toFixed(2) + "px";
+    layer.style.top = (it + box.top).toFixed(2) + "px";
     layer.style.width = box.width.toFixed(2) + "px";
     layer.style.height = box.height.toFixed(2) + "px";
   }
@@ -1018,6 +1033,14 @@
     state.annotLayerRo.observe(viewer);
     const stage = $("map-ref-zoom-stage");
     if (stage) state.annotLayerRo.observe(stage);
+    const img = $("map-ref-img");
+    if (img) {
+      state.annotLayerRo.observe(img);
+      if (!img._annotSyncBound) {
+        img._annotSyncBound = true;
+        img.addEventListener("load", function () { syncAnnotLayerToContent(); });
+      }
+    }
   }
 
   function getPdfjsLib() {
@@ -1175,7 +1198,8 @@
         return;
       }
       pinch = null;
-      if (!state.annotateMode && state.mapRefZoom.scale > 1.01 && e.touches.length === 1) {
+      // Pan when zoomed — including annotate mode (letterbox / areas not on the layer)
+      if (state.mapRefZoom.scale > 1.01 && e.touches.length === 1) {
         const t = e.touches[0];
         pan = { x0: t.clientX, y0: t.clientY, ox: state.mapRefZoom.x, oy: state.mapRefZoom.y };
       } else {
@@ -1199,7 +1223,7 @@
         applyMapRefZoom();
         return;
       }
-      if (pan && e.touches && e.touches.length === 1 && !state.annotateMode) {
+      if (pan && e.touches && e.touches.length === 1) {
         e.preventDefault();
         const t = e.touches[0];
         state.mapRefZoom.x = pan.ox + (t.clientX - pan.x0);
@@ -1888,7 +1912,10 @@
           longTimer: null,
           dragging: false,
           suppressed: false,
-          place: true
+          place: true,
+          panning: false,
+          ox: 0,
+          oy: 0
         };
         return;
       }
@@ -1918,12 +1945,28 @@
       const dx = e.clientX - gesture.startX;
       const dy = e.clientY - gesture.startY;
       const dist = Math.sqrt(dx * dx + dy * dy);
+      if (gesture.panning) {
+        e.preventDefault();
+        state.mapRefZoom.x = gesture.ox + dx;
+        state.mapRefZoom.y = gesture.oy + dy;
+        applyMapRefZoom();
+        return;
+      }
       if (!gesture.dragging) {
         if (dist > MOVE_CANCEL_PX) {
-          // Moved too early → treat as scroll / cancel long-press (no select on release)
+          // Moved too early → cancel long-press / place; empty drag pans when zoomed
           gesture.suppressed = true;
           clearLongTimer();
           if (gesture.marker) gesture.marker.classList.remove("pressing");
+          if (gesture.place && state.mapRefZoom.scale > 1.01) {
+            gesture.panning = true;
+            gesture.ox = state.mapRefZoom.x;
+            gesture.oy = state.mapRefZoom.y;
+            e.preventDefault();
+            state.mapRefZoom.x = gesture.ox + dx;
+            state.mapRefZoom.y = gesture.oy + dy;
+            applyMapRefZoom();
+          }
         }
         return;
       }
@@ -1952,8 +1995,8 @@
         endGesture();
         return;
       }
-      // Short tap
-      const wasSuppressed = g.suppressed;
+      // Short tap (or finished pan — never place after a pan)
+      const wasSuppressed = g.suppressed || g.panning;
       const marker = g.marker;
       const treeId = g.treeId;
       const place = g.place;
