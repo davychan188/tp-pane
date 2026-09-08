@@ -273,7 +273,7 @@
     if (btn) {
       btn.textContent = hide ? "顯示媒體" : "隱藏媒體";
       btn.setAttribute("aria-pressed", hide ? "true" : "false");
-      btn.title = hide ? "顯示右側媒體欄" : "隱藏右側媒體欄";
+      btn.title = hide ? "顯示樹木 PDF（右側）" : "隱藏樹木 PDF（地圖可擴展）";
     }
     try { localStorage.setItem(LS_HIDE_MEDIA, hide ? "1" : "0"); } catch (_) {}
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
@@ -824,6 +824,9 @@
     bindTreeListInteractions(box);
     renderAnnotOverlay();
     updateMapRestoreHint();
+    if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
+      setTimeout(function () { window.GpkgViewer.invalidateMap(); }, 60);
+    }
   }
 
   function selectTreeFromList(treeId) {

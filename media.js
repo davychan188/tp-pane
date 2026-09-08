@@ -233,7 +233,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=63";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=64";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -390,6 +390,13 @@
     const resetBtn = $("media-pdf-zoom-reset");
     const s = state.pdfZoom;
     if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
+    const scroll = $("media-pdf-scroll");
+    if (scroll) scroll.classList.toggle("is-zoomed", s > 1.01);
+  }
+
+  function setPdfZoom(scale) {
+    state.pdfZoom = clamp(scale, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+    applyPdfZoom();
   }
 
   async function renderPdfCanvas() {
@@ -1269,6 +1276,179 @@
     });
   }
 
+  /**
+   * Finger pinch to zoom PDF canvas (pdf.js) + pan when zoomed.
+   * Live CSS scale during pinch; crisp re-render on release / button / wheel.
+   */
+  function bindPdfGestures(scroll) {
+    if (!scroll || scroll._pdfGesturesBound) return;
+    scroll._pdfGesturesBound = true;
+
+    let pinch = null; // { dist, zoom, scrollL, scrollT, cx, cy }
+    let pan = null;   // { x, y, sl, st }
+    let previewScale = 1;
+
+    function touchDist(a, b) {
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.sqrt(dx * dx + dy * dy) || 1;
+    }
+    function midPoint(a, b) {
+      return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    }
+    function stageEl() {
+      return $("media-pdf-stage");
+    }
+    function clearPreview() {
+      previewScale = 1;
+      const stage = stageEl();
+      if (stage) stage.style.transform = "none";
+    }
+    function applyPreview(scale, originX, originY) {
+      previewScale = scale;
+      const stage = stageEl();
+      if (!stage) return;
+      stage.style.transformOrigin = originX.toFixed(1) + "px " + originY.toFixed(1) + "px";
+      stage.style.transform = "scale(" + scale.toFixed(4) + ")";
+    }
+    function commitPinchZoom(nextZoom, focusClientX, focusClientY) {
+      const prev = state.pdfZoom;
+      const next = clamp(nextZoom, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+      clearPreview();
+      if (Math.abs(next - prev) < 0.001) {
+        updatePdfZoomLabel();
+        return;
+      }
+      // Preserve focal point roughly via scroll position after re-render
+      const rect = scroll.getBoundingClientRect();
+      const relX = (focusClientX != null ? focusClientX : rect.left + rect.width / 2) - rect.left + scroll.scrollLeft;
+      const relY = (focusClientY != null ? focusClientY : rect.top + rect.height / 2) - rect.top + scroll.scrollTop;
+      const ratio = next / (prev || 1);
+      state.pdfZoom = next;
+      updatePdfZoomLabel();
+      if (state.pdfRenderTimer) {
+        clearTimeout(state.pdfRenderTimer);
+        state.pdfRenderTimer = null;
+      }
+      state.pdfRenderTimer = setTimeout(function () {
+        state.pdfRenderTimer = null;
+        renderPdfCanvas().then(function () {
+          scroll.scrollLeft = Math.max(0, relX * ratio - rect.width / 2);
+          scroll.scrollTop = Math.max(0, relY * ratio - rect.height / 2);
+        });
+      }, 40);
+    }
+
+    scroll.addEventListener("touchstart", function (e) {
+      if (!e.touches || !e.touches.length) return;
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pan = null;
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const mid = midPoint(e.touches[0], e.touches[1]);
+        const rect = scroll.getBoundingClientRect();
+        pinch = {
+          dist: d,
+          zoom: state.pdfZoom,
+          scrollL: scroll.scrollLeft,
+          scrollT: scroll.scrollTop,
+          ox: mid.x - rect.left + scroll.scrollLeft,
+          oy: mid.y - rect.top + scroll.scrollTop
+        };
+        return;
+      }
+      pinch = null;
+      if (state.pdfZoom > 1.01 && e.touches.length === 1) {
+        const t = e.touches[0];
+        pan = { x: t.clientX, y: t.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
+        scroll.classList.add("is-panning");
+      }
+    }, { passive: false });
+
+    scroll.addEventListener("touchmove", function (e) {
+      if (!e.touches) return;
+      if (e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const factor = d / pinch.dist;
+        const live = clamp(pinch.zoom * factor, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+        const preview = live / (pinch.zoom || 1);
+        const mid = midPoint(e.touches[0], e.touches[1]);
+        const rect = scroll.getBoundingClientRect();
+        applyPreview(preview, mid.x - rect.left, mid.y - rect.top);
+        // Keep pinch mid roughly centered while previewing
+        scroll.scrollLeft = pinch.ox * preview - (mid.x - rect.left);
+        scroll.scrollTop = pinch.oy * preview - (mid.y - rect.top);
+        const resetBtn = $("media-pdf-zoom-reset");
+        if (resetBtn) resetBtn.textContent = live <= 1.01 ? "1×" : (Math.round(live * 10) / 10) + "×";
+        return;
+      }
+      if (pan && e.touches.length === 1 && state.pdfZoom > 1.01) {
+        e.preventDefault();
+        const t = e.touches[0];
+        scroll.scrollLeft = pan.sl - (t.clientX - pan.x);
+        scroll.scrollTop = pan.st - (t.clientY - pan.y);
+      }
+    }, { passive: false });
+
+    function endPinch(e) {
+      if (pinch) {
+        const touches = e.touches;
+        if (!touches || touches.length < 2) {
+          const next = clamp(pinch.zoom * (previewScale || 1), PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+          const rect = scroll.getBoundingClientRect();
+          const midX = rect.left + Math.min(rect.width, Math.max(0, pinch.ox - scroll.scrollLeft));
+          const midY = rect.top + Math.min(rect.height, Math.max(0, pinch.oy - scroll.scrollTop));
+          pinch = null;
+          commitPinchZoom(next, midX, midY);
+        }
+      }
+      if (pan && (!e.touches || e.touches.length === 0)) {
+        pan = null;
+        scroll.classList.remove("is-panning");
+      }
+    }
+    scroll.addEventListener("touchend", endPinch);
+    scroll.addEventListener("touchcancel", endPinch);
+
+    // Mouse drag pan when zoomed
+    let mPan = null;
+    scroll.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
+      if (state.pdfZoom <= 1.01) return;
+      mPan = { x: e.clientX, y: e.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
+      scroll.classList.add("is-panning");
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", function (e) {
+      if (!mPan) return;
+      scroll.scrollLeft = mPan.sl - (e.clientX - mPan.x);
+      scroll.scrollTop = mPan.st - (e.clientY - mPan.y);
+    });
+    window.addEventListener("mouseup", function () {
+      if (!mPan) return;
+      mPan = null;
+      scroll.classList.remove("is-panning");
+    });
+
+    // Ctrl/⌘ + wheel (trackpad pinch on desktop)
+    scroll.addEventListener("wheel", function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const delta = e.deltaY;
+      const factor = delta > 0 ? 0.92 : 1.08;
+      commitPinchZoom(state.pdfZoom * factor, e.clientX, e.clientY);
+    }, { passive: false });
+
+    scroll.addEventListener("dblclick", function (e) {
+      if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
+      e.preventDefault();
+      if (state.pdfZoom > 1.01) resetPdfZoom();
+      else commitPinchZoom(2.2, e.clientX, e.clientY);
+    });
+  }
+
   function init() {
     const prev = $("media-prev");
     const next = $("media-next");
@@ -1289,6 +1469,7 @@
     if (pzin) pzin.addEventListener("click", () => stepPdfZoom(1));
     if (pzout) pzout.addEventListener("click", () => stepPdfZoom(-1));
     if (pzreset) pzreset.addEventListener("click", () => resetPdfZoom());
+    bindPdfGestures($("media-pdf-scroll"));
 
     const mediaInput = $("media-file-input");
     if (mediaInput) {
@@ -1359,7 +1540,7 @@
     });
 
     // Do not auto-load demo media in primary UI; use ?demo=1 (app.js) for samples.
-    setStatusHint("尚未載入 PDF — 請按「媒體資料夾」選 PDF（右側為高清晰度頁面；清單／地圖互不依賴）");
+    setStatusHint("尚未載入 PDF — 請按「媒體資料夾」選 PDF（右側可雙指縮放；底列清單／地圖互不依賴）");
     setFilterMode("all");
     updatePdfLibrary();
   }

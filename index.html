@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=63" />
-  <link rel="stylesheet" href="styles.css?v=63" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=64" />
+  <link rel="stylesheet" href="styles.css?v=64" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -22,7 +22,7 @@
       <div class="logo" aria-hidden="true"></div>
       <div>
         tp-pane <span class="ver">樹木媒體</span>
-        <small>地圖＋PDF 頁面 · 清單與地圖互不依賴 · 檔案只留本機</small>
+        <small>地圖｜樹木 PDF｜底列清單 · 互不依賴 · 檔案只留本機</small>
       </div>
     </div>
     <div class="spacer"></div>
@@ -44,7 +44,7 @@
         <input id="media-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple />
       </label>
       <button class="btn" id="btn-fit" type="button">Fit</button>
-      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示右側媒體欄">隱藏媒體</button>
+      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示樹木 PDF（地圖可擴展）">隱藏媒體</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
       <button class="btn" id="btn-export-xlsx" type="button">匯出目錄</button>
       <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
@@ -139,7 +139,7 @@
         <input id="media-file-input-side" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <button class="btn full" id="btn-media-clear" type="button">清除媒體</button>
-      <div class="hint" id="media-status">尚未載入 PDF — 請按「媒體資料夾」選 PDF（右側為 PDF 頁面；清單／地圖互不依賴）</div>
+      <div class="hint" id="media-status">尚未載入 PDF — 請按「媒體資料夾」選 PDF（可雙指縮放）（右側為 PDF 頁面；清單／地圖互不依賴）</div>
     </div>
 
     <p class="edit-hint" id="edit-hint">點選樹木以檢視屬性與媒體。需要移動時再開「移動此點」。</p>
@@ -170,12 +170,6 @@
       <button class="btn mobile-only full" id="btn-clear-mobile" type="button">清除全部</button>
       <button class="btn full" id="btn-refresh-app" type="button">重新載入最新版</button>
     </details>
-
-    <div class="settings-card tree-list-panel" id="tree-list-panel" hidden>
-      <div class="card-title">樹木清單 Tree list <span class="tag" id="tree-list-count"></span></div>
-      <div class="hint" style="margin:0 0 6px">清單不需地圖亦可使用（地圖 PDF 另匯入）。點一下可編輯 ID／樹種／DBH／H／S／備註。加樹模式顯示 x／y（%）。自動儲存至本機。</div>
-      <div class="tree-list" id="tree-list" role="listbox" aria-label="樹木清單"></div>
-    </div>
 
     <div class="file-list" id="file-list">
       <p class="empty-hint">尚未載入檔案。</p>
@@ -243,6 +237,14 @@
   </div>
   <div class="status" id="status">Starting…</div>
 
+  <section class="tree-list-panel" id="tree-list-panel" hidden aria-label="樹木列表">
+    <div class="tree-list-head">
+      <div class="card-title">樹木列表 Tree list <span class="tag" id="tree-list-count"></span></div>
+      <div class="hint tree-list-hint">橫向捲動 · 點一下可編輯 ID／樹種／DBH／H／S／備註 · 自動儲存</div>
+    </div>
+    <div class="tree-list" id="tree-list" role="listbox" aria-label="樹木列表"></div>
+  </section>
+
   <section class="table-panel" id="table-panel">
     <div class="table-resizer" id="table-resizer" title="拖曳調整高度"></div>
     <div class="feature-attrs" id="feature-attrs">
@@ -270,7 +272,7 @@
 
   <aside class="media-panel" id="media-panel" aria-label="調查 PDF">
     <div class="media-head">
-      <h2 id="media-pdf-title">調查 PDF <span class="tag">頁面檢視</span></h2>
+      <h2 id="media-pdf-title">樹木 PDF <span class="tag">頁面檢視</span></h2>
       <span class="media-badge" id="media-source-badge" hidden>未載入</span>
       <div class="media-filter-toggle" role="group" aria-label="媒體顯示模式">
         <button type="button" class="media-filter-btn on" id="media-filter-all" title="顯示全部已匯入媒體">全部媒體</button>
@@ -287,7 +289,7 @@
           <canvas id="media-pdf-canvas" class="media-pdf-canvas" aria-label="PDF page"></canvas>
         </div>
       </div>
-      <div class="media-pdf-empty" id="media-pdf-empty">尚未載入 PDF — 請按「媒體資料夾」選 PDF</div>
+      <div class="media-pdf-empty" id="media-pdf-empty">尚未載入 PDF — 請按「媒體資料夾」選 PDF（可雙指縮放）</div>
       <div class="zoom-ctrls media-pdf-zoom-ctrls" role="group" aria-label="PDF 縮放">
         <button type="button" class="zoom-btn" id="media-pdf-zoom-out" title="縮小" aria-label="縮小">−</button>
         <button type="button" class="zoom-btn" id="media-pdf-zoom-reset" title="重設" aria-label="重設">1×</button>
@@ -307,12 +309,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=63"></script>
-  <script src="vendor/geopackage.min.js?v=63"></script>
-  <script src="vendor/xlsx.full.min.js?v=63"></script>
-  <script src="vendor/pdf.min.js?v=63"></script>
-  <script src="media.js?v=63"></script>
-  <script src="import-extras.js?v=63"></script>
-  <script src="app.js?v=63"></script>
+  <script src="vendor/leaflet.js?v=64"></script>
+  <script src="vendor/geopackage.min.js?v=64"></script>
+  <script src="vendor/xlsx.full.min.js?v=64"></script>
+  <script src="vendor/pdf.min.js?v=64"></script>
+  <script src="media.js?v=64"></script>
+  <script src="import-extras.js?v=64"></script>
+  <script src="app.js?v=64"></script>
 </body>
 </html>

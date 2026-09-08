@@ -717,14 +717,25 @@ body.media-layout .media-panel {
   display: flex;
 }
 body.media-layout {
-  grid-template-columns: 280px minmax(0, 1fr) minmax(280px, 1fr);
-  grid-template-rows: 56px 1.25fr 0.75fr;
+  /* Wireframe: map | PDF on top; tree list full-width bottom under both */
+  grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr) minmax(132px, 26vh);
   grid-template-areas:
     "top top top"
     "side map media"
     "side table media";
 }
-/* Fieldwork: collapse right media column, expand map + attrs */
+/* Excel / annotate trees → horizontal list spans under map + PDF */
+body.media-layout.has-tree-list {
+  grid-template-areas:
+    "top top top"
+    "side map media"
+    "side trees trees";
+}
+body.media-layout.has-tree-list .table-panel {
+  display: none !important;
+}
+/* Fieldwork: hide PDF column → map expands; tree list stays bottom */
 body.media-layout.hide-media {
   grid-template-columns: 280px minmax(0, 1fr);
   grid-template-areas:
@@ -732,15 +743,17 @@ body.media-layout.hide-media {
     "side map"
     "side table";
 }
+body.media-layout.hide-media.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side map"
+    "side trees";
+}
 body.media-layout.hide-media .media-panel {
   display: none !important;
 }
-body.media-layout.table-collapsed {
-  /* Keep room for selected-tree attributes; only hide full catalog */
+body.media-layout.table-collapsed:not(.has-tree-list) {
   grid-template-rows: 56px 1.35fr minmax(160px, 0.65fr);
-}
-body.media-layout.table-collapsed .table-bar {
-  /* compact bar under attrs */
 }
 body.media-layout.table-collapsed .feature-attrs {
   max-height: none;
@@ -1136,7 +1149,14 @@ body.media-layout.table-collapsed .feature-attrs {
   -webkit-overflow-scrolling: touch;
   background: #0a0f1c;
   position: relative;
-  touch-action: pan-x pan-y;
+  /* Pinch / pan handled in JS (pdf.js canvas zoom) */
+  touch-action: none;
+}
+.media-pdf-scroll.is-zoomed {
+  cursor: grab;
+}
+.media-pdf-scroll.is-panning {
+  cursor: grabbing;
 }
 .media-pdf-scroll[hidden] {
   display: none !important;
@@ -1145,8 +1165,8 @@ body.media-layout.table-collapsed .feature-attrs {
   width: auto;
   height: auto;
   min-width: 100%;
-  transform: none !important;
   transform-origin: 0 0;
+  will-change: transform;
 }
 .media-pdf-canvas {
   display: block;
@@ -1291,15 +1311,21 @@ body.media-layout.show-photos .media-pdf-main {
   /* Do not use [hidden]/display:none — breaks Android/iOS label picking */
 }
 
-/* iPad mini / tablet landscape: ~50% map+attrs | ~50% media, sidebar as drawer */
+/* iPad mini / tablet landscape: map | PDF on top; tree list full-width bottom */
 @media (max-width: 1180px) {
   body.media-layout {
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto 1.25fr 0.75fr;
+    grid-template-rows: auto minmax(0, 1fr) minmax(120px, 28vh);
     grid-template-areas:
       "top top"
       "map media"
       "table media";
+  }
+  body.media-layout.has-tree-list {
+    grid-template-areas:
+      "top top"
+      "map media"
+      "trees trees";
   }
   body.media-layout.hide-media {
     grid-template-columns: 1fr;
@@ -1308,10 +1334,16 @@ body.media-layout.show-photos .media-pdf-main {
       "map"
       "table";
   }
+  body.media-layout.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map"
+      "trees";
+  }
   body.media-layout.hide-media .media-panel {
     display: none !important;
   }
-  body.media-layout.table-collapsed {
+  body.media-layout.table-collapsed:not(.has-tree-list) {
     grid-template-rows: auto 1.35fr minmax(140px, 0.65fr);
   }
   body.media-layout .media-panel {
@@ -1321,7 +1353,6 @@ body.media-layout.show-photos .media-pdf-main {
     max-height: none;
     flex: 1 1 auto;
   }
-  /* Prefer selected-tree attrs on iPad; keep catalog behind toggle */
   body.media-layout.table-collapsed .feature-attrs {
     display: block;
   }
@@ -1334,8 +1365,8 @@ body.media-layout.show-photos .media-pdf-main {
 }
 
 @media (max-width: 1180px) and (orientation: landscape) {
-  body.media-layout:not(.table-collapsed) {
-    grid-template-rows: auto 1.2fr 0.8fr;
+  body.media-layout {
+    grid-template-rows: auto minmax(0, 1fr) minmax(118px, 26vh);
   }
   .media-frame {
     width: min(52%, 240px);
@@ -1350,12 +1381,20 @@ body.media-layout.show-photos .media-pdf-main {
 @media (max-width: 700px) and (orientation: portrait) {
   body.media-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr minmax(160px, 28vh) minmax(220px, 34vh);
+    grid-template-rows: auto 1fr minmax(140px, 26vh) minmax(200px, 32vh);
     grid-template-areas:
       "top"
       "map"
       "table"
       "media";
+  }
+  body.media-layout.has-tree-list {
+    grid-template-rows: auto minmax(0, 1fr) minmax(200px, 34vh) minmax(160px, 28vh);
+    grid-template-areas:
+      "top"
+      "map"
+      "media"
+      "trees";
   }
   body.media-layout.hide-media {
     grid-template-rows: auto 1fr minmax(200px, 40vh);
@@ -1363,6 +1402,12 @@ body.media-layout.show-photos .media-pdf-main {
       "top"
       "map"
       "table";
+  }
+  body.media-layout.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map"
+      "trees";
   }
   body.media-layout.hide-media .media-panel {
     display: none !important;
@@ -1378,20 +1423,68 @@ body:not(.media-layout) .media-panel { display: none !important; }
 body:not(.media-layout) .feature-attrs { display: none; }
 
 /* ---- Excel tree list + map PDF reference (no-GPKG workflow) ---- */
+.tree-list-panel {
+  grid-area: trees;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 6px 10px 8px;
+  gap: 4px;
+}
+body.has-tree-list .tree-list-panel,
+.tree-list-panel:not([hidden]) {
+  display: flex;
+}
+.tree-list-panel[hidden] {
+  display: none !important;
+}
+.tree-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.tree-list-panel .card-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin: 0;
+}
 .tree-list-panel .card-title .tag {
   font-size: 11px;
   font-weight: 600;
   color: #9eb6ff;
   margin-left: 6px;
 }
+.tree-list-hint {
+  margin: 0 !important;
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .tree-list {
-  max-height: 280px;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: hidden;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-right: 2px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  padding: 4px 2px 6px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
 }
 .tree-list-item,
 .tree-list-main {
@@ -1412,6 +1505,28 @@ body:not(.media-layout) .feature-attrs { display: none; }
   touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
+}
+body.media-layout .tree-list-row {
+  flex: 0 0 auto;
+  width: min(240px, 72vw);
+  max-width: 280px;
+  scroll-snap-align: start;
+}
+body.media-layout .tree-list-row .tree-list-main,
+body.media-layout .tree-list-row .tree-list-item {
+  height: 100%;
+}
+body.media-layout .tree-list-remarks {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+body.media-layout .map-restore-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0 4px;
 }
 .tree-list-item:hover,
 .tree-list-item:active,
@@ -1683,8 +1798,8 @@ body.has-map-ref .status {
     padding-right: 8px;
     font-size: 12px;
   }
-  .tree-list {
-    max-height: 160px;
+  body.media-layout .tree-list {
+    max-height: none;
   }
 }
 
