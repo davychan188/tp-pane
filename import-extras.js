@@ -49,7 +49,7 @@
     mapRefKind: null,   // "pdf" | "image"
     mapRefName: "",
     mapRefMeta: null,   // { name, kind } when map blob cannot be restored
-    mapRefZoom: { scale: 1, x: 0, y: 0 },
+    mapRefZoom: { scale: 1, x: 0, y: 0 }, // x/y = scrollLeft/Top; scale enlarges layout (no CSS scale())
     mapRefRasterized: false,
     objectUrls: [],
     annotateMode: false,
@@ -1041,7 +1041,7 @@
     updatePdfHint();
     if (show) {
       ensureAnnotLayerObserver();
-      syncAnnotLayerToContent();
+      applyMapRefZoom();
     }
     syncAnnotLayerActive();
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
@@ -1114,7 +1114,8 @@
 
   /**
    * Pin annotate layer to the painted map image content (not letterbox / overlay viewport).
-   * Layer lives inside #map-ref-zoom-stage so CSS zoom/pan keeps markers glued to the map.
+   * Layer lives inside #map-ref-zoom-stage; stage layout size = viewer × zoom (no CSS scale),
+   * so getBoundingClientRect / hit-testing stay 1:1 with pixels at any zoom.
    */
   function syncAnnotLayerToContent() {
     const layer = $("map-annotate-layer");
@@ -1133,11 +1134,9 @@
       fillStage();
       return;
     }
-    // Prefer the img element's layout box inside the stage (not assuming it fills stage),
-    // then object-fit:contain letterbox within that box — same space markers/% use.
+    // Prefer the img element's layout box inside the stage, then object-fit:contain letterbox.
     const iw = media.clientWidth || 0;
     const ih = media.clientHeight || 0;
-    // Media present but not laid out yet → keep full stage hit target (never 0×0)
     if (!iw || !ih) {
       fillStage();
       return;
@@ -1148,8 +1147,6 @@
       il = media.offsetLeft || 0;
       it = media.offsetTop || 0;
     } else {
-      // Fallback: compare untransformed layout via client rects only when scale≈1;
-      // otherwise keep stage-relative 0,0 if sizes match.
       il = Math.max(0, Math.round((sw - iw) / 2));
       it = Math.max(0, Math.round((sh - ih) / 2));
     }
@@ -1168,18 +1165,25 @@
     const viewer = $("map-ref-viewer");
     if (!viewer || typeof ResizeObserver === "undefined") return;
     if (state.annotLayerRo) return;
-    state.annotLayerRo = new ResizeObserver(function () {
+    // Observe viewer + img only — NOT the stage (applyMapRefZoom resizes stage → would loop)
+    state.annotLayerRo = new ResizeObserver(function (entries) {
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].target === viewer) {
+          applyMapRefZoom();
+          return;
+        }
+      }
       syncAnnotLayerToContent();
     });
     state.annotLayerRo.observe(viewer);
-    const stage = $("map-ref-zoom-stage");
-    if (stage) state.annotLayerRo.observe(stage);
     const img = $("map-ref-img");
     if (img) {
       state.annotLayerRo.observe(img);
       if (!img._annotSyncBound) {
         img._annotSyncBound = true;
-        img.addEventListener("load", function () { syncAnnotLayerToContent(); });
+        img.addEventListener("load", function () {
+          syncAnnotLayerToContent();
+        });
       }
     }
   }
@@ -1282,16 +1286,55 @@
     });
   }
 
+  /**
+   * Layout-size zoom (Option 1): enlarge #map-ref-zoom-stage width/height by scale,
+   * pan with viewer scrollLeft/scrollTop. Never use transform:scale() — WebKit hit-tests
+   * the untransformed box, which broke Apple Pencil above ~1.9×.
+   * state.mapRefZoom.x/y are scroll offsets (CSS px).
+   */
   function applyMapRefZoom() {
+    if (state._mapRefZoomApplying) return;
+    const viewer = $("map-ref-viewer");
     const stage = $("map-ref-zoom-stage");
     const z = state.mapRefZoom;
-    if (stage) {
-      stage.style.transform = "translate(" + z.x.toFixed(1) + "px," + z.y.toFixed(1) + "px) scale(" + z.scale.toFixed(3) + ")";
+    if (!viewer || !stage) return;
+    state._mapRefZoomApplying = true;
+    try {
+      const scale = Math.max(MAP_ZOOM_MIN, Number(z.scale) || 1);
+      z.scale = scale;
+
+      const vw = viewer.clientWidth || 0;
+      const vh = viewer.clientHeight || 0;
+      if (vw > 0 && vh > 0) {
+        const sw = vw * scale;
+        const sh = vh * scale;
+        stage.style.width = sw.toFixed(2) + "px";
+        stage.style.height = sh.toFixed(2) + "px";
+        // Critical: no CSS scale / translate zoom — layout box == visual box for hit-testing
+        stage.style.transform = "none";
+
+        const maxX = Math.max(0, sw - vw);
+        const maxY = Math.max(0, sh - vh);
+        if (scale <= 1.01) {
+          z.x = 0;
+          z.y = 0;
+        } else {
+          z.x = Math.max(0, Math.min(maxX, Number(z.x) || 0));
+          z.y = Math.max(0, Math.min(maxY, Number(z.y) || 0));
+        }
+        viewer.scrollLeft = z.x;
+        viewer.scrollTop = z.y;
+        // Re-sync in case scroll clamping differed
+        z.x = viewer.scrollLeft;
+        z.y = viewer.scrollTop;
+      }
+
+      const resetBtn = $("map-ref-zoom-reset");
+      if (resetBtn) resetBtn.textContent = scale <= 1.01 ? "1×" : (Math.round(scale * 10) / 10) + "×";
+      syncAnnotLayerToContent();
+    } finally {
+      state._mapRefZoomApplying = false;
     }
-    const resetBtn = $("map-ref-zoom-reset");
-    if (resetBtn) resetBtn.textContent = z.scale <= 1.01 ? "1×" : (Math.round(z.scale * 10) / 10) + "×";
-    // Layout box unchanged by transform; keep content-box layer aligned after panel changes
-    syncAnnotLayerToContent();
   }
 
   function resetMapRefZoom() {
@@ -1301,15 +1344,33 @@
     applyMapRefZoom();
   }
 
-  function stepMapRefZoom(dir) {
+  /** Zoom toward a point in viewer-local CSS px (default: viewport center). */
+  function setMapRefZoomAt(nextScale, localX, localY) {
+    const viewer = $("map-ref-viewer");
     const z = state.mapRefZoom;
-    const next = clampZoom(z.scale + dir * MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX);
+    const prev = Math.max(MAP_ZOOM_MIN, Number(z.scale) || 1);
+    const next = clampZoom(nextScale, MAP_ZOOM_MIN, MAP_ZOOM_MAX);
     if (next <= 1.01) {
       resetMapRefZoom();
       return;
     }
+    const vw = viewer ? viewer.clientWidth : 0;
+    const vh = viewer ? viewer.clientHeight : 0;
+    const fx = localX != null && isFinite(localX) ? localX : (vw / 2);
+    const fy = localY != null && isFinite(localY) ? localY : (vh / 2);
+    // Content point under focal in "scale=1 stage" coordinates
+    const baseX = (z.x + fx) / prev;
+    const baseY = (z.y + fy) / prev;
     z.scale = next;
+    z.x = baseX * next - fx;
+    z.y = baseY * next - fy;
     applyMapRefZoom();
+  }
+
+  function stepMapRefZoom(dir) {
+    const z = state.mapRefZoom;
+    const next = clampZoom(z.scale + dir * MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX);
+    setMapRefZoomAt(next);
   }
 
   function bindMapRefZoomGestures() {
@@ -1324,20 +1385,31 @@
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
     }
 
+    function midLocal(a, b) {
+      const r = viewer.getBoundingClientRect();
+      return {
+        x: ((a.clientX + b.clientX) / 2) - r.left,
+        y: ((a.clientY + b.clientY) / 2) - r.top
+      };
+    }
+
     function isStylusTouch(t) {
       // iPadOS: Apple Pencil also synthesizes touch events (touchType === "stylus")
       return !!(t && (t.touchType === "stylus" || t.touchType === "pen"));
     }
 
     viewer.addEventListener("touchstart", (e) => {
-      // Let annotate layer own Pencil / single-finger draw; still allow pinch zoom
       if (!e.touches) return;
       if (e.touches.length === 2) {
+        const m = midLocal(e.touches[0], e.touches[1]);
         pinch = {
           dist: dist(e.touches[0], e.touches[1]),
           scale: state.mapRefZoom.scale,
-          x: state.mapRefZoom.x,
-          y: state.mapRefZoom.y
+          fx: m.x,
+          fy: m.y,
+          // content under focal in scale=1 units
+          baseX: (state.mapRefZoom.x + m.x) / Math.max(MAP_ZOOM_MIN, state.mapRefZoom.scale),
+          baseY: (state.mapRefZoom.y + m.y) / Math.max(MAP_ZOOM_MIN, state.mapRefZoom.scale)
         };
         pan = null;
         e.preventDefault();
@@ -1348,8 +1420,6 @@
       // Never pan with Apple Pencil — ink draw owns stylus (even when zoomed)
       if (isStylusTouch(t)) {
         pan = null;
-        // At CSS scale ≥ ~1.9 WebKit often misses the transformed annotate layer;
-        // without preventDefault, Safari scroll/Scribble cancels the pen pointer stream.
         const annot = $("map-annotate-layer");
         if (annot && annot.classList.contains("active")) {
           e.preventDefault();
@@ -1369,13 +1439,16 @@
         e.preventDefault();
         const d = dist(e.touches[0], e.touches[1]);
         const next = clampZoom(pinch.scale * (d / pinch.dist), MAP_ZOOM_MIN, MAP_ZOOM_MAX);
-        state.mapRefZoom.scale = next;
+        const m = midLocal(e.touches[0], e.touches[1]);
+        // Keep original content under moving pinch midpoint
         if (next <= 1.01) {
+          state.mapRefZoom.scale = 1;
           state.mapRefZoom.x = 0;
           state.mapRefZoom.y = 0;
         } else {
-          state.mapRefZoom.x = pinch.x;
-          state.mapRefZoom.y = pinch.y;
+          state.mapRefZoom.scale = next;
+          state.mapRefZoom.x = pinch.baseX * next - m.x;
+          state.mapRefZoom.y = pinch.baseY * next - m.y;
         }
         applyMapRefZoom();
         return;
@@ -1383,8 +1456,9 @@
       if (pan && e.touches && e.touches.length === 1) {
         e.preventDefault();
         const t = e.touches[0];
-        state.mapRefZoom.x = pan.ox + (t.clientX - pan.x0);
-        state.mapRefZoom.y = pan.oy + (t.clientY - pan.y0);
+        // Finger moves right → content follows → scrollLeft decreases
+        state.mapRefZoom.x = pan.ox - (t.clientX - pan.x0);
+        state.mapRefZoom.y = pan.oy - (t.clientY - pan.y0);
         applyMapRefZoom();
       }
     }, { passive: false });
@@ -1393,6 +1467,13 @@
       if (state.mapRefZoom.scale <= 1.01) resetMapRefZoom();
       pinch = null;
       pan = null;
+    }, { passive: true });
+
+    // Keep state.x/y in sync if programmatic/native scroll ever happens
+    viewer.addEventListener("scroll", function () {
+      if (state.mapRefZoom.scale <= 1.01) return;
+      state.mapRefZoom.x = viewer.scrollLeft;
+      state.mapRefZoom.y = viewer.scrollTop;
     }, { passive: true });
   }
 
@@ -1420,7 +1501,7 @@
       state.mapRefMeta = { name: name, kind: state.mapRefKind };
       updateMapRefVisibility();
       ensureAnnotLayerObserver();
-      syncAnnotLayerToContent();
+      applyMapRefZoom();
       renderAnnotOverlay();
       updateMapRestoreHint();
       schedulePersist();
@@ -1469,7 +1550,7 @@
     if (img) {
       const onReady = function () {
         img.removeEventListener("load", onReady);
-        syncAnnotLayerToContent();
+        applyMapRefZoom();
         renderAnnotOverlay();
       };
       img.addEventListener("load", onReady);
@@ -2144,10 +2225,8 @@
   }
 
   function bindAnnotOverlayPointers(layer) {
-    // Bind on #map-ref-viewer (no CSS transform), not the layer inside .map-ref-zoom-stage.
-    // Root cause of Pencil dying at zoom ≥ ~1.9×: WebKit hit-tests the untransformed
-    // annotate layer box, so most of the visually scaled map misses the layer and never
-    // starts ink — while getBoundingClientRect/% math on the layer remains correct.
+    // Bind on #map-ref-viewer so letterbox + zoom chrome still receive Pencil/pen.
+    // Zoom uses layout-size enlargement (not CSS scale), so layer rect == hit-test box.
     const viewer = $("map-ref-viewer");
     if (!layer || !viewer || viewer._annotPtrBound) return;
     viewer._annotPtrBound = true;
@@ -2174,11 +2253,10 @@
     }
 
     function pctFromClient(clientX, clientY) {
-      // Layer may miss hit-testing when stage is scaled, but its transformed rect is still valid.
       return pctFromEvent(layer, clientX, clientY);
     }
 
-    /** Visual AABB hit-test — needed when CSS scale makes elementFromPoint/target miss markers. */
+    /** Visual AABB hit-test — robust when target/elementFromPoint misses small markers. */
     function hitTestMarkerAt(clientX, clientY) {
       const nodes = layer.querySelectorAll(".annot-marker");
       for (let i = 0; i < nodes.length; i++) {
@@ -2320,7 +2398,7 @@
       setImportStatus("已畫墨跡（不加樹）· 共 " + state.drawStrokes.length + " 筆", "ok");
     }
 
-    // Claim Apple Pencil on the untransformed viewer (capture) so stage scale cannot drop the target
+    // Claim Apple Pencil early (capture) so Safari scroll/Scribble cannot cancel the pointer stream
     viewer.addEventListener("touchstart", (e) => {
       if (!layer.classList.contains("active")) return;
       if (!e.touches || !e.touches.length) return;
@@ -2431,8 +2509,8 @@
 
       if (gesture.panning) {
         e.preventDefault();
-        state.mapRefZoom.x = gesture.ox + dx;
-        state.mapRefZoom.y = gesture.oy + dy;
+        state.mapRefZoom.x = gesture.ox - dx;
+        state.mapRefZoom.y = gesture.oy - dy;
         applyMapRefZoom();
         return;
       }
@@ -2448,8 +2526,8 @@
             gesture.ox = state.mapRefZoom.x;
             gesture.oy = state.mapRefZoom.y;
             e.preventDefault();
-            state.mapRefZoom.x = gesture.ox + dx;
-            state.mapRefZoom.y = gesture.oy + dy;
+            state.mapRefZoom.x = gesture.ox - dx;
+            state.mapRefZoom.y = gesture.oy - dy;
             applyMapRefZoom();
             return;
           }
@@ -2617,7 +2695,7 @@
     ensureAnnotLayerObserver();
     syncAnnotLayerToContent();
     window.addEventListener("resize", function () {
-      syncAnnotLayerToContent();
+      applyMapRefZoom();
     });
 
     const ok = $("btn-annot-id-ok");
