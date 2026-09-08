@@ -41,7 +41,7 @@
   let restoring = false;
 
   const state = {
-    trees: [],          // { id, props, feature, hasCoords, x, y, annot, leafletMarker }
+    trees: [],          // { id, props, feature, hasCoords, x, y, path, annot, leafletMarker }
     sourceName: "",
     mapRefUrl: null,
     mapRefRasterUrl: null, // PNG/JPG blob used for annotate when PDF was rasterized
@@ -93,6 +93,9 @@
         hasCoords: !!t.hasCoords,
         x: t.x == null ? null : Number(t.x),
         y: t.y == null ? null : Number(t.y),
+        path: Array.isArray(t.path) && t.path.length ? t.path.map(function (p) {
+          return { x: Number(p.x), y: Number(p.y) };
+        }) : null,
         annot: !!t.annot,
         source: t.source || (t.annot ? "annotate" : "import"),
         geometry: (t.feature && t.feature.geometry) ? t.feature.geometry : null
@@ -138,6 +141,7 @@
           hasCoords: t.hasCoords,
           x: t.x,
           y: t.y,
+          path: t.path || null,
           annot: t.annot,
           source: t.source,
           geometry: t.geometry
@@ -194,6 +198,9 @@
           hasCoords: hasCoords,
           x: rec.x == null || rec.x === "" ? null : Number(rec.x),
           y: rec.y == null || rec.y === "" ? null : Number(rec.y),
+          path: Array.isArray(rec.path) && rec.path.length ? rec.path.map(function (p) {
+            return { x: Number(p.x), y: Number(p.y) };
+          }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); }) : null,
           annot: !!rec.annot,
           leafletMarker: null,
           source: rec.source || ""
@@ -1390,7 +1397,7 @@
       openTab.removeAttribute("download");
       openTab.textContent = "新分頁開啟地圖圖片";
     }
-    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」點擊加樹）");
+    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可開「加樹模式」用 Pencil 畫記加樹）");
   }
 
   function clearMapRef() {
@@ -1522,8 +1529,8 @@
     if (state.annotateMode) {
       setImportStatus(
         state.idMode === "manual"
-          ? "加樹模式（手動編號）：點地圖後輸入編號；長按標記可拖移"
-          : "加樹模式（自動編號）：點地圖放置 T1、T2…；長按標記可拖移",
+          ? "加樹模式（手動編號）：Apple Pencil 自由畫記；鬆開後輸入編號；長按標記可拖移"
+          : "加樹模式（自動編號）：Apple Pencil 自由畫記 → T1、T2…；長按標記可拖移；手指縮放可平移",
         "ok"
       );
     } else {
@@ -1549,10 +1556,10 @@
     if (hint) {
       if (state.annotateMode) {
         hint.textContent = state.idMode === "manual"
-          ? "手動編號：點地圖後輸入樹木 ID。短點選取；長按拖移。座標相對地圖內容 %（隨縮放黏住）。"
-          : "自動編號：點地圖依序 T1、T2…。短點選取；長按拖移。PNG／JPG 最佳；PDF 會轉影像頁。";
+          ? "手動編號：Pencil 自由畫記後輸入 ID。短點選取；長按拖移整條記號。手指縮放可平移。"
+          : "自動編號：Pencil 自由畫記 → T1、T2…。短點選取；長按拖移。放置點＝筆跡重心。PNG／JPG 最佳。";
       } else {
-        hint.textContent = "開啟「加樹模式」後，點地圖圖片或 Leaflet 放置樹木。PNG／JPG 地圖最合適。";
+        hint.textContent = "開啟「加樹模式」後，用 Apple Pencil 在地圖上自由畫記號加樹。PNG／JPG 地圖最合適。";
       }
     }
   }
@@ -1566,6 +1573,83 @@
       x: Math.max(0, Math.min(100, x)),
       y: Math.max(0, Math.min(100, y))
     };
+  }
+
+  function clampPct(v) {
+    return Math.max(0, Math.min(100, Number(v)));
+  }
+
+  /**
+   * Placement point for a freehand stroke = centroid (average of sample points).
+   * Chosen over bbox midpoint so asymmetric ticks / hooks sit nearer the ink mass.
+   */
+  function pathCentroid(pts) {
+    if (!pts || !pts.length) return null;
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (!p || !isFinite(p.x) || !isFinite(p.y)) continue;
+      sx += Number(p.x);
+      sy += Number(p.y);
+      n += 1;
+    }
+    if (!n) return null;
+    return { x: sx / n, y: sy / n };
+  }
+
+  function normalizePath(pts) {
+    if (!Array.isArray(pts) || !pts.length) return null;
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (!p) continue;
+      const x = clampPct(p.x);
+      const y = clampPct(p.y);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      out.push({ x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) });
+    }
+    return out.length ? out : null;
+  }
+
+  /** Simplify polyline in % space (min-distance thin + hard cap) for autosave size. */
+  function simplifyPath(pts, minDist) {
+    pts = normalizePath(pts);
+    if (!pts) return null;
+    if (pts.length <= 2) return pts;
+    minDist = minDist == null ? 0.35 : minDist;
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const prev = out[out.length - 1];
+      const p = pts[i];
+      const d = Math.hypot(p.x - prev.x, p.y - prev.y);
+      if (d >= minDist || i === pts.length - 1) out.push(p);
+    }
+    if (out.length <= 96) return out;
+    const step = Math.ceil(out.length / 96);
+    const capped = [];
+    for (let i = 0; i < out.length; i += step) capped.push(out[i]);
+    const last = out[out.length - 1];
+    const tail = capped[capped.length - 1];
+    if (!tail || tail.x !== last.x || tail.y !== last.y) capped.push(last);
+    return capped;
+  }
+
+  function pathToSvgD(pts) {
+    if (!pts || !pts.length) return "";
+    let d = "M " + Number(pts[0].x).toFixed(3) + " " + Number(pts[0].y).toFixed(3);
+    for (let i = 1; i < pts.length; i++) {
+      d += " L " + Number(pts[i].x).toFixed(3) + " " + Number(pts[i].y).toFixed(3);
+    }
+    return d;
+  }
+
+  function translatePath(pts, dx, dy) {
+    if (!pts || !pts.length) return null;
+    return pts.map(function (p) {
+      return { x: clampPct(p.x + dx), y: clampPct(p.y + dy) };
+    });
   }
 
   function beginPlace(place) {
@@ -1588,8 +1672,17 @@
       setImportStatus("編號已存在：" + id, "warn");
       return false;
     }
-    const x = place && place.x != null ? Number(place.x) : null;
-    const y = place && place.y != null ? Number(place.y) : null;
+    let path = place && place.path ? simplifyPath(place.path) : null;
+    let x = place && place.x != null ? Number(place.x) : null;
+    let y = place && place.y != null ? Number(place.y) : null;
+    if (path && path.length && (x == null || y == null || !isFinite(x) || !isFinite(y))) {
+      const c = pathCentroid(path);
+      if (c) { x = c.x; y = c.y; }
+    }
+    if (path && path.length === 1 && x != null && y != null) {
+      // Keep a one-point path so reload still knows it was ink-placed
+      path = [{ x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) }];
+    }
     const props = {
       "Tree ID": id,
       Species: "",
@@ -1619,6 +1712,7 @@
       hasCoords: hasCoords,
       x: x,
       y: y,
+      path: path,
       annot: true,
       leafletMarker: null,
       source: (place && place.source) || "map-ref"
@@ -1733,29 +1827,45 @@
     const layer = $("map-annotate-layer");
     if (!layer) return;
     syncAnnotLayerToContent();
-    let html = "";
-    state.trees.forEach((t) => {
-      if (t.x == null || t.y == null) return;
-      // Only show overlay markers for map-ref annotations (or all — useful when map-ref visible)
-      html += '<button type="button" class="annot-marker" data-tree-id="' + escapeHtml(t.id) +
-        '" style="left:' + Number(t.x).toFixed(3) + "%;top:" + Number(t.y).toFixed(3) + '%" title="' +
-        escapeHtml(t.id) + '">' +
-        '<span class="annot-marker-dot"></span>' +
-        '<span class="annot-marker-label">' + escapeHtml(t.id) + "</span>" +
-        "</button>";
-    });
-    layer.innerHTML = html;
     const selected = (window.GpkgMedia && window.GpkgMedia.getState)
       ? window.GpkgMedia.getState().treeId
       : null;
-    if (selected) highlightAnnotMarker(selected);
+    const selU = selected ? String(selected).toUpperCase() : "";
+    let pathsHtml = "";
+    let markersHtml = "";
+    state.trees.forEach((t) => {
+      if (t.x == null || t.y == null) return;
+      const tid = escapeHtml(t.id);
+      const on = !!(selU && String(t.id).toUpperCase() === selU);
+      const inkPts = (t.path && t.path.length >= 2) ? t.path : null;
+      if (inkPts) {
+        pathsHtml += '<path class="annot-ink' + (on ? " on" : "") + '" data-tree-id="' + tid +
+          '" d="' + pathToSvgD(inkPts) + '" fill="none" vector-effect="non-scaling-stroke"></path>';
+      }
+      markersHtml += '<button type="button" class="annot-marker' + (inkPts ? " has-path" : "") +
+        (on ? " on" : "") + '" data-tree-id="' + tid +
+        '" style="left:' + Number(t.x).toFixed(3) + "%;top:" + Number(t.y).toFixed(3) + '%" title="' +
+        tid + '">' +
+        '<span class="annot-marker-dot" aria-hidden="true"></span>' +
+        '<span class="annot-marker-label">' + tid + "</span>" +
+        "</button>";
+    });
+    layer.innerHTML =
+      '<svg class="annot-ink-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' +
+      pathsHtml +
+      '<path class="annot-ink-preview" hidden fill="none" vector-effect="non-scaling-stroke"></path>' +
+      "</svg>" + markersHtml;
   }
 
   function highlightAnnotMarker(treeId) {
     const layer = $("map-annotate-layer");
     if (layer) {
+      const want = treeId ? String(treeId).toUpperCase() : "";
       Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
-        el.classList.toggle("on", treeId && String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase());
+        el.classList.toggle("on", !!(want && String(el.getAttribute("data-tree-id")).toUpperCase() === want));
+      });
+      Array.prototype.forEach.call(layer.querySelectorAll("path.annot-ink"), (el) => {
+        el.classList.toggle("on", !!(want && String(el.getAttribute("data-tree-id")).toUpperCase() === want));
       });
     }
     const want = treeId ? String(treeId).toUpperCase() : "";
@@ -1778,13 +1888,20 @@
     });
   }
 
-  function updateTreeXy(treeId, x, y) {
+  function updateTreeXy(treeId, x, y, pathOpt) {
     const want = String(treeId || "").toUpperCase();
     const t = state.trees.find((x0) => String(x0.id).toUpperCase() === want);
     if (!t) return false;
     const nx = Math.max(0, Math.min(100, Number(x)));
     const ny = Math.max(0, Math.min(100, Number(y)));
     if (!isFinite(nx) || !isFinite(ny)) return false;
+    const ox = t.x != null && isFinite(Number(t.x)) ? Number(t.x) : nx;
+    const oy = t.y != null && isFinite(Number(t.y)) ? Number(t.y) : ny;
+    if (pathOpt && Array.isArray(pathOpt)) {
+      t.path = simplifyPath(pathOpt) || normalizePath(pathOpt);
+    } else if (t.path && t.path.length && (nx !== ox || ny !== oy)) {
+      t.path = translatePath(t.path, nx - ox, ny - oy);
+    }
     t.x = nx;
     t.y = ny;
     t.props = t.props || {};
@@ -1796,13 +1913,23 @@
       t.feature.properties.y = t.props.y;
     }
     schedulePersist();
-    // Keep overlay marker in sync (may already be at this %)
+    // Keep overlay marker + ink path in sync (may already be at this %)
     const layer = $("map-annotate-layer");
     if (layer) {
       Array.prototype.forEach.call(layer.querySelectorAll(".annot-marker"), (el) => {
         if (String(el.getAttribute("data-tree-id") || "").toUpperCase() !== want) return;
         el.style.left = nx.toFixed(3) + "%";
         el.style.top = ny.toFixed(3) + "%";
+        el.classList.toggle("has-path", !!(t.path && t.path.length >= 2));
+      });
+      Array.prototype.forEach.call(layer.querySelectorAll("path.annot-ink"), (el) => {
+        if (String(el.getAttribute("data-tree-id") || "").toUpperCase() !== want) return;
+        if (t.path && t.path.length >= 2) {
+          el.setAttribute("d", pathToSvgD(t.path));
+          el.removeAttribute("hidden");
+        } else {
+          el.setAttribute("d", "");
+        }
       });
     }
     // Refresh list x/y; skip full re-render while a field editor is open
@@ -1919,7 +2046,7 @@
 
     const LONG_MS = 450;
     const MOVE_CANCEL_PX = 14;
-    let gesture = null; // { pointerId, marker, treeId, startX, startY, longTimer, dragging, suppressed, startLeft, startTop }
+    let gesture = null;
     let suppressClickUntil = 0;
 
     function clearLongTimer() {
@@ -1934,6 +2061,7 @@
       if (gesture && gesture.marker) {
         gesture.marker.classList.remove("pressing", "dragging");
       }
+      clearPreview();
       gesture = null;
     }
 
@@ -1941,66 +2069,202 @@
       return pctFromEvent(layer, clientX, clientY);
     }
 
+    function findMarkerEl(treeId) {
+      if (!treeId) return null;
+      const want = String(treeId).toUpperCase();
+      const nodes = layer.querySelectorAll(".annot-marker");
+      for (let i = 0; i < nodes.length; i++) {
+        if (String(nodes[i].getAttribute("data-tree-id") || "").toUpperCase() === want) return nodes[i];
+      }
+      return null;
+    }
+
+    function findInkEl(treeId) {
+      if (!treeId) return null;
+      const want = String(treeId).toUpperCase();
+      const nodes = layer.querySelectorAll("path.annot-ink");
+      for (let i = 0; i < nodes.length; i++) {
+        if (String(nodes[i].getAttribute("data-tree-id") || "").toUpperCase() === want) return nodes[i];
+      }
+      return null;
+    }
+
+    function clearPreview() {
+      const prev = layer.querySelector(".annot-ink-preview");
+      if (!prev) return;
+      prev.setAttribute("hidden", "");
+      prev.setAttribute("d", "");
+    }
+
+    function showPreview(pts) {
+      let prev = layer.querySelector(".annot-ink-preview");
+      if (!prev) {
+        let svg = layer.querySelector("svg.annot-ink-svg");
+        if (!svg) {
+          svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("class", "annot-ink-svg");
+          svg.setAttribute("viewBox", "0 0 100 100");
+          svg.setAttribute("preserveAspectRatio", "none");
+          svg.setAttribute("aria-hidden", "true");
+          layer.insertBefore(svg, layer.firstChild);
+        }
+        prev = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        prev.setAttribute("class", "annot-ink-preview");
+        prev.setAttribute("fill", "none");
+        prev.setAttribute("vector-effect", "non-scaling-stroke");
+        svg.appendChild(prev);
+      }
+      if (!pts || !pts.length) {
+        prev.setAttribute("hidden", "");
+        prev.setAttribute("d", "");
+        return;
+      }
+      prev.removeAttribute("hidden");
+      prev.setAttribute("d", pathToSvgD(pts));
+    }
+
     function beginDrag() {
       if (!gesture || !gesture.marker) return;
+      const t = state.trees.find(function (x) {
+        return String(x.id).toUpperCase() === String(gesture.treeId || "").toUpperCase();
+      });
       gesture.dragging = true;
       gesture.marker.classList.remove("pressing");
       gesture.marker.classList.add("dragging");
+      gesture.originX = t && t.x != null ? Number(t.x) : null;
+      gesture.originY = t && t.y != null ? Number(t.y) : null;
+      gesture.basePath = (t && t.path && t.path.length)
+        ? t.path.map(function (p) { return { x: p.x, y: p.y }; })
+        : (gesture.originX != null ? [{ x: gesture.originX, y: gesture.originY }] : null);
+      gesture.livePath = gesture.basePath;
       try { gesture.marker.setPointerCapture(gesture.pointerId); } catch (_) {}
       selectTreeFromList(gesture.treeId);
       setImportStatus("拖移 " + gesture.treeId + " …鬆開後儲存位置", "ok");
     }
 
-    function applyMarkerVisual(clientX, clientY) {
-      if (!gesture || !gesture.marker) return;
+    function applyDragVisual(clientX, clientY) {
+      if (!gesture || !gesture.marker) return null;
       const pct = pctFromClient(clientX, clientY);
-      if (!pct) return pct;
+      if (!pct) return null;
       gesture.marker.style.left = pct.x.toFixed(3) + "%";
       gesture.marker.style.top = pct.y.toFixed(3) + "%";
+      if (gesture.basePath && gesture.basePath.length && gesture.originX != null && gesture.originY != null) {
+        const dx = pct.x - gesture.originX;
+        const dy = pct.y - gesture.originY;
+        gesture.livePath = translatePath(gesture.basePath, dx, dy);
+        const ink = findInkEl(gesture.treeId);
+        if (ink && gesture.livePath && gesture.livePath.length >= 2) {
+          ink.setAttribute("d", pathToSvgD(gesture.livePath));
+        }
+      }
       return pct;
     }
 
-    layer.addEventListener("pointerdown", (e) => {
-      if (!state.annotateMode) return;
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      const hit = e.target && e.target.closest && e.target.closest(".annot-marker");
-      if (!hit || !layer.contains(hit)) {
-        // Empty overlay: short tap handled on pointerup / click
-        gesture = {
-          pointerId: e.pointerId,
-          marker: null,
-          treeId: null,
-          startX: e.clientX,
-          startY: e.clientY,
-          longTimer: null,
-          dragging: false,
-          suppressed: false,
-          place: true,
-          panning: false,
-          ox: 0,
-          oy: 0
-        };
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      const tid = hit.getAttribute("data-tree-id");
+    function startDraw(e, firstPct) {
       gesture = {
         pointerId: e.pointerId,
-        marker: hit,
-        treeId: tid,
+        mode: "draw",
+        marker: null,
+        treeId: null,
         startX: e.clientX,
         startY: e.clientY,
         longTimer: null,
         dragging: false,
         suppressed: false,
-        place: false
+        place: false,
+        panning: false,
+        points: firstPct ? [firstPct] : []
       };
-      hit.classList.add("pressing");
-      gesture.longTimer = setTimeout(() => {
-        if (!gesture || gesture.pointerId !== e.pointerId || gesture.suppressed) return;
-        beginDrag();
-      }, LONG_MS);
+      try { layer.setPointerCapture(e.pointerId); } catch (_) {}
+      showPreview(gesture.points);
+    }
+
+    function finishDraw(e) {
+      const g = gesture;
+      const pts = simplifyPath(g && g.points ? g.points : null) || normalizePath(g && g.points);
+      clearPreview();
+      try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
+      endGesture();
+      suppressClickUntil = Date.now() + 450;
+      if (!pts || !pts.length) return;
+      const c = pathCentroid(pts);
+      if (!c) return;
+      beginPlace({ x: c.x, y: c.y, path: pts, lat: null, lng: null, source: "map-ref" });
+      // Refresh overlay after place (async UI / dialog may defer)
+      if (state.idMode !== "manual") renderAnnotOverlay();
+    }
+
+    layer.addEventListener("pointerdown", (e) => {
+      if (!state.annotateMode) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+
+      const hitMarker = e.target && e.target.closest && e.target.closest(".annot-marker");
+      const hitInk = e.target && e.target.closest && e.target.closest("path.annot-ink");
+      let tid = null;
+      let hit = null;
+      if (hitMarker && layer.contains(hitMarker)) {
+        hit = hitMarker;
+        tid = hitMarker.getAttribute("data-tree-id");
+      } else if (hitInk && layer.contains(hitInk)) {
+        tid = hitInk.getAttribute("data-tree-id");
+        hit = findMarkerEl(tid);
+      }
+
+      if (hit && tid) {
+        e.preventDefault();
+        e.stopPropagation();
+        gesture = {
+          pointerId: e.pointerId,
+          mode: "marker",
+          marker: hit,
+          treeId: tid,
+          startX: e.clientX,
+          startY: e.clientY,
+          longTimer: null,
+          dragging: false,
+          suppressed: false,
+          place: false,
+          panning: false,
+          originX: null,
+          originY: null,
+          basePath: null,
+          livePath: null
+        };
+        hit.classList.add("pressing");
+        gesture.longTimer = setTimeout(() => {
+          if (!gesture || gesture.pointerId !== e.pointerId || gesture.suppressed) return;
+          beginDrag();
+        }, LONG_MS);
+        return;
+      }
+
+      const pct = pctFromClient(e.clientX, e.clientY);
+      const isPenLike = e.pointerType === "pen" || e.pointerType === "mouse";
+
+      // Pen / mouse: freehand draw (primary)
+      if (isPenLike) {
+        e.preventDefault();
+        startDraw(e, pct);
+        return;
+      }
+
+      // Touch: pending — short tap places; drag when zoomed pans; drag unzoomed draws
+      gesture = {
+        pointerId: e.pointerId,
+        mode: "touch-pending",
+        marker: null,
+        treeId: null,
+        startX: e.clientX,
+        startY: e.clientY,
+        longTimer: null,
+        dragging: false,
+        suppressed: false,
+        place: true,
+        panning: false,
+        ox: 0,
+        oy: 0,
+        points: pct ? [pct] : []
+      };
     });
 
     layer.addEventListener("pointermove", (e) => {
@@ -2008,6 +2272,20 @@
       const dx = e.clientX - gesture.startX;
       const dy = e.clientY - gesture.startY;
       const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (gesture.mode === "draw") {
+        e.preventDefault();
+        const pct = pctFromClient(e.clientX, e.clientY);
+        if (pct) {
+          const last = gesture.points[gesture.points.length - 1];
+          if (!last || Math.hypot(pct.x - last.x, pct.y - last.y) >= 0.12) {
+            gesture.points.push(pct);
+            showPreview(gesture.points);
+          }
+        }
+        return;
+      }
+
       if (gesture.panning) {
         e.preventDefault();
         state.mapRefZoom.x = gesture.ox + dx;
@@ -2015,41 +2293,77 @@
         applyMapRefZoom();
         return;
       }
-      if (!gesture.dragging) {
+
+      if (gesture.mode === "touch-pending" && !gesture.dragging) {
         if (dist > MOVE_CANCEL_PX) {
-          // Moved too early → cancel long-press / place; empty drag pans when zoomed
           gesture.suppressed = true;
-          clearLongTimer();
-          if (gesture.marker) gesture.marker.classList.remove("pressing");
-          if (gesture.place && state.mapRefZoom.scale > 1.01) {
+          if (state.mapRefZoom.scale > 1.01) {
+            // Finger pan when zoomed — never create a tree from a pan
             gesture.panning = true;
+            gesture.place = false;
+            gesture.mode = "pan";
             gesture.ox = state.mapRefZoom.x;
             gesture.oy = state.mapRefZoom.y;
             e.preventDefault();
             state.mapRefZoom.x = gesture.ox + dx;
             state.mapRefZoom.y = gesture.oy + dy;
             applyMapRefZoom();
+            return;
+          }
+          // Unzoomed finger stroke → freehand draw
+          gesture.mode = "draw";
+          gesture.place = false;
+          try { layer.setPointerCapture(e.pointerId); } catch (_) {}
+          const pct = pctFromClient(e.clientX, e.clientY);
+          if (pct) gesture.points.push(pct);
+          showPreview(gesture.points);
+          e.preventDefault();
+          return;
+        }
+        // Track early samples for a possible short freehand
+        const pct = pctFromClient(e.clientX, e.clientY);
+        if (pct && gesture.points) {
+          const last = gesture.points[gesture.points.length - 1];
+          if (!last || Math.hypot(pct.x - last.x, pct.y - last.y) >= 0.12) {
+            gesture.points.push(pct);
           }
         }
         return;
       }
+
+      if (!gesture.dragging) {
+        if (dist > MOVE_CANCEL_PX) {
+          gesture.suppressed = true;
+          clearLongTimer();
+          if (gesture.marker) gesture.marker.classList.remove("pressing");
+        }
+        return;
+      }
       e.preventDefault();
-      applyMarkerVisual(e.clientX, e.clientY);
+      applyDragVisual(e.clientX, e.clientY);
     });
 
     function finishPointer(e) {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
       const g = gesture;
       clearLongTimer();
+
+      if (g.mode === "draw") {
+        e.preventDefault();
+        e.stopPropagation();
+        finishDraw(e);
+        return;
+      }
+
       if (g.dragging && g.marker && g.treeId) {
         e.preventDefault();
         e.stopPropagation();
-        const pct = applyMarkerVisual(e.clientX, e.clientY) || pctFromClient(e.clientX, e.clientY);
+        const pct = applyDragVisual(e.clientX, e.clientY) || pctFromClient(e.clientX, e.clientY);
         g.marker.classList.remove("dragging", "pressing");
         try { g.marker.releasePointerCapture(g.pointerId); } catch (_) {}
         suppressClickUntil = Date.now() + 500;
         if (pct) {
-          updateTreeXy(g.treeId, pct.x, pct.y);
+          updateTreeXy(g.treeId, pct.x, pct.y, g.livePath || null);
           setImportStatus(
             "已移動 " + g.treeId + " · x " + fmtXy(pct.x) + "% y " + fmtXy(pct.y) + "%",
             "ok"
@@ -2058,11 +2372,12 @@
         endGesture();
         return;
       }
-      // Short tap (or finished pan — never place after a pan)
-      const wasSuppressed = g.suppressed || g.panning;
+
+      const wasSuppressed = g.suppressed || g.panning || g.mode === "pan";
       const marker = g.marker;
       const treeId = g.treeId;
       const place = g.place;
+      const touchPts = g.points;
       endGesture();
       if (wasSuppressed) {
         suppressClickUntil = Date.now() + 300;
@@ -2073,24 +2388,35 @@
         selectTreeFromList(treeId);
         return;
       }
-      if (place && state.annotateMode) {
-        // Pen/touch place on pointerup; mouse uses click below
-        if (e.pointerType === "pen" || e.pointerType === "touch") {
-          suppressClickUntil = Date.now() + 450;
-          handleOverlayClick(e);
-        }
+      // Light touch tap still places (single-point / tiny mark)
+      if (place && state.annotateMode && e.pointerType === "touch") {
+        suppressClickUntil = Date.now() + 450;
+        const pct = pctFromClient(e.clientX, e.clientY);
+        if (!pct) return;
+        const pts = (touchPts && touchPts.length) ? simplifyPath(touchPts) : [{ x: pct.x, y: pct.y }];
+        const c = pathCentroid(pts) || pct;
+        beginPlace({ x: c.x, y: c.y, path: pts, lat: null, lng: null, source: "map-ref" });
+        if (state.idMode !== "manual") renderAnnotOverlay();
       }
     }
 
     layer.addEventListener("pointerup", finishPointer);
     layer.addEventListener("pointercancel", (e) => {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
+      if (gesture.mode === "draw") {
+        clearPreview();
+        try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
+        endGesture();
+        suppressClickUntil = Date.now() + 300;
+        return;
+      }
       if (gesture.dragging && gesture.marker) {
-        // Revert visual to stored tree coords
         const t = state.trees.find((x) => String(x.id).toUpperCase() === String(gesture.treeId || "").toUpperCase());
         if (t && t.x != null && t.y != null) {
           gesture.marker.style.left = Number(t.x).toFixed(3) + "%";
           gesture.marker.style.top = Number(t.y).toFixed(3) + "%";
+          const ink = findInkEl(gesture.treeId);
+          if (ink && t.path && t.path.length >= 2) ink.setAttribute("d", pathToSvgD(t.path));
         }
         try { gesture.marker.releasePointerCapture(gesture.pointerId); } catch (_) {}
       }
@@ -2104,7 +2430,16 @@
         e.stopPropagation();
         return;
       }
-      // Mouse (and synthesised click): place or select via existing handler
+      // Mouse click fallback: if no freehand completed, treat as tap-place / select
+      // (pen/mouse freehand already handled on pointerup; this catches marker select edge cases)
+      const hitInk = e.target && e.target.closest && e.target.closest("path.annot-ink");
+      if (hitInk) {
+        const tid = hitInk.getAttribute("data-tree-id");
+        if (tid) {
+          selectTreeFromList(tid);
+          return;
+        }
+      }
       handleOverlayClick(e);
     });
   }

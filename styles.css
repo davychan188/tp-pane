@@ -2004,16 +2004,62 @@ body.annotate-mode.has-map-ref #map {
   border-color: #fff;
   box-shadow: 0 0 0 1.5px rgba(59, 130, 246, 0.7);
 }
+.annot-ink-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.annot-ink {
+  pointer-events: stroke;
+  stroke: #fbbf24;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+.annot-ink.on {
+  stroke: #60a5fa;
+  stroke-width: 3.25;
+  filter: drop-shadow(0 0 1px rgba(15, 23, 42, 0.85));
+}
+.annot-ink-preview {
+  pointer-events: none;
+  stroke: #fde68a;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+  vector-effect: non-scaling-stroke;
+}
+
 .annot-marker-dot {
-  /* Visual ~5–6px; hit pad stays on .annot-marker (~28px) */
-  width: 6px;
-  height: 6px;
+  /* Tiny anchor for hit-test / legacy tap marks; freehand stroke is the real mark */
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: #f59e0b;
   border: 1px solid #fef3c7;
   box-shadow: none;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+.annot-marker.has-path .annot-marker-dot {
+  width: 3px;
+  height: 3px;
+  opacity: 0.4;
+  background: #fbbf24;
+}
+.annot-marker.has-path.on .annot-marker-dot,
+.annot-marker.has-path.dragging .annot-marker-dot {
+  width: 5px;
+  height: 5px;
+  opacity: 1;
 }
 .annot-marker:active .annot-marker-dot {
   transform: scale(1.1);
