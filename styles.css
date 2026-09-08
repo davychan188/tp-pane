@@ -706,12 +706,12 @@ body.table-collapsed .status { bottom: 12px; }
   grid-area: media;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  padding: 10px;
+  padding: 6px 8px;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 body.media-layout .media-panel {
   display: flex;
@@ -777,7 +777,7 @@ body.media-layout.table-collapsed .feature-attrs {
 }
 .feature-attrs .tag,
 .media-head .tag {
-  font-size: 11px;
+  font-size: 9px;
   background: rgba(91, 140, 255, 0.18);
   color: #9eb6ff;
   padding: 3px 8px;
@@ -917,10 +917,14 @@ body.media-layout.table-collapsed .feature-attrs {
 }
 .media-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .media-badge {
   font-size: 10px;
@@ -936,7 +940,7 @@ body.media-layout.table-collapsed .feature-attrs {
 }
 .media-tree-hint {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 10px;
   color: var(--muted);
   font-weight: 600;
 }
@@ -955,9 +959,9 @@ body.media-layout.table-collapsed .feature-attrs {
   border: 0;
   background: transparent;
   color: #9aa8c7;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 3px 8px;
   cursor: pointer;
   line-height: 1.2;
   white-space: nowrap;
@@ -1106,7 +1110,7 @@ body.media-layout.table-collapsed .feature-attrs {
   background: var(--panel-2);
   color: var(--text);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 10px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1187,65 +1191,64 @@ body.media-layout.table-collapsed .feature-attrs {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 .media-pdf-nav-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
 }
 .media-pdf-step {
-  min-height: 44px;
-  min-width: 72px;
+  min-height: 32px;
+  min-width: 36px;
+  padding: 2px 8px;
   font-weight: 700;
+  font-size: 14px;
 }
 .media-page-now {
-  font-size: 13px;
+  appearance: none;
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: #93c5fd;
   white-space: nowrap;
   flex: 1 1 auto;
   text-align: center;
   min-width: 0;
+  min-height: 32px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.media-page-now:hover,
+.media-page-now:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  background: rgba(59, 130, 246, 0.22);
+}
+.media-page-now:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .media-pdf-open-tab {
   text-decoration: none;
   color: inherit;
-  font-size: 12px;
-  padding: 8px 10px;
-  min-height: 44px;
+  font-size: 11px;
+  padding: 4px 8px;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
 }
 .media-pdf-open-tab[hidden] { display: none !important; }
 
+/* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
 .media-nums {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  -webkit-overflow-scrolling: touch;
+  display: none !important;
 }
-.media-num {
-  flex: 0 0 auto;
-  min-width: 52px;
-  height: 44px;
-  border-radius: 12px;
-  border: 2px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 15px;
-  cursor: pointer;
-}
-.media-num.on {
-  border-color: var(--accent);
-  background: rgba(91, 140, 255, 0.18);
-  color: #93c5fd;
-}
+.media-num { display: none !important; }
 
 .media-pdf-zoom-ctrls {
   position: absolute;
@@ -1807,12 +1810,12 @@ body.media-layout .map-restore-hint {
 .map-ref-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 3px 6px;
   background: linear-gradient(180deg, #182038, #12192b);
   border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
   position: relative;
@@ -1821,20 +1824,74 @@ body.media-layout .map-restore-hint {
 .map-ref-toolbar #map-ref-label {
   flex: 1;
   min-width: 0;
+  max-width: 28%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #c7d2fe;
+  font-size: 11px;
 }
 .map-ref-actions {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+}
+.map-ref-actions .btn,
+.map-ref-actions .map-ref-btn-compact {
+  min-height: 28px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.map-ref-actions .annot-seg {
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 10px;
 }
 .map-ref-actions #map-ref-open-tab {
   text-decoration: none;
   color: inherit;
+}
+.map-ink-ctrls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 15, 28, 0.45);
+}
+.map-ink-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.map-ink-ctrl-lab {
+  line-height: 1;
+}
+.map-ink-ctrl input[type="color"] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.map-ink-ctrl input[type="range"] {
+  width: 56px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.map-ref-zoom-ctrls .zoom-btn {
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 12px;
 }
 .map-ref-viewer {
   position: relative;
@@ -2061,7 +2118,7 @@ body.annotate-mode.has-map-ref #map {
 }
 .annot-draw-ink {
   fill: none;
-  stroke: #38bdf8;
+  stroke: #38bdf8; /* overridden per-stroke via attributes when set */
   /* Match preview (~2.25px screen) — 0.55 + non-scaling-stroke was invisible on iPad */
   stroke-width: 2.25;
   stroke-linecap: round;
@@ -2086,7 +2143,7 @@ body.annotate-mode.has-map-ref #map {
 }
 .annot-ink-preview {
   pointer-events: none;
-  stroke: #fde68a;
+  stroke: #38bdf8; /* live preview follows ink prefs via attributes */
   stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -2156,18 +2213,18 @@ body.annotate-mode.has-map-ref #map {
 
 .map-annotate-pdf-hint {
   position: absolute;
-  left: 10px;
+  left: 8px;
   right: auto;
-  bottom: 8px;
-  max-width: min(280px, calc(100% - 20px));
+  bottom: 6px;
+  max-width: min(140px, calc(100% - 16px));
   z-index: 6;
   background: rgba(15, 23, 42, 0.72);
   color: #fde68a;
   border: 1px solid rgba(251, 191, 36, 0.35);
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 10px;
-  line-height: 1.3;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 9px;
+  line-height: 1.2;
   pointer-events: none;
 }
 .map-annotate-pdf-hint[hidden] {

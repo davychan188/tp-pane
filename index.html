@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=76" />
-  <link rel="stylesheet" href="styles.css?v=76" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=77" />
+  <link rel="stylesheet" href="styles.css?v=77" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -180,22 +180,32 @@
   <div id="map"></div>
   <div class="map-ref-panel" id="map-ref-panel" hidden>
     <div class="map-ref-toolbar">
-      <span id="map-ref-label">地圖參考 Map reference</span>
+      <span id="map-ref-label">地圖參考</span>
       <div class="map-ref-actions">
-        <button class="btn" type="button" id="btn-annot-mode-bar" title="Add-tree mode">加樹模式</button>
-        <div class="annot-id-mode annot-id-mode-inline" role="group" aria-label="Tree ID mode" id="annot-id-mode-bar">
-          <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動編號</button>
-          <button class="btn annot-seg" type="button" data-id-mode="manual" title="Manual ID">手動編號</button>
+        <div class="map-ink-ctrls" role="group" aria-label="墨跡設定">
+          <label class="map-ink-ctrl" title="墨跡顏色">
+            <span class="map-ink-ctrl-lab">色</span>
+            <input type="color" id="map-ink-color" value="#38bdf8" aria-label="墨跡顏色" />
+          </label>
+          <label class="map-ink-ctrl" title="墨跡粗幼">
+            <span class="map-ink-ctrl-lab">粗</span>
+            <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
+          </label>
         </div>
-        <button class="btn" type="button" id="btn-annot-export-bar" title="Export tree list CSV">匯出列表</button>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-mode-bar" title="Add-tree mode">加樹</button>
+        <div class="annot-id-mode annot-id-mode-inline" role="group" aria-label="Tree ID mode" id="annot-id-mode-bar">
+          <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動</button>
+          <button class="btn annot-seg" type="button" data-id-mode="manual" title="Manual ID">手動</button>
+        </div>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-bar" title="Export tree list CSV">匯出</button>
         <div class="zoom-ctrls map-ref-zoom-ctrls" role="group" aria-label="地圖參考縮放">
           <button type="button" class="zoom-btn" id="map-ref-zoom-out" title="縮小" aria-label="縮小">−</button>
           <button type="button" class="zoom-btn" id="map-ref-zoom-reset" title="重設" aria-label="重設">1×</button>
           <button type="button" class="zoom-btn" id="map-ref-zoom-in" title="放大" aria-label="放大">+</button>
         </div>
-        <a class="btn" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="Open map PDF/image in a new tab">新分頁開啟地圖 PDF</a>
-        <button class="btn" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換地圖</button>
-        <button class="btn" type="button" id="btn-map-ref-clear">清除</button>
+        <a class="btn map-ref-btn-compact" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前地圖 PDF／圖片">新分頁</a>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
       </div>
     </div>
     <div class="map-ref-viewer" id="map-ref-viewer">
@@ -209,9 +219,7 @@
         <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
         <div id="map-annotate-layer" class="map-annotate-layer" aria-hidden="true"></div>
       </div>
-      <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>
-        PDF 已轉影像頁加樹 · 建議直接用 PNG／JPG
-      </div>
+      <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>PDF→影像</div>
     </div>
   </div>
   <div class="annot-float-bar" id="annot-float-bar" hidden title="加樹工具（地圖左下；主控制在左側欄）">
@@ -272,7 +280,7 @@
 
   <aside class="media-panel" id="media-panel" aria-label="調查 PDF">
     <div class="media-head">
-      <h2 id="media-pdf-title">樹木 PDF <span class="tag">頁面檢視</span></h2>
+      <h2 id="media-pdf-title">樹木 PDF <span class="tag">頁</span></h2>
       <span class="media-badge" id="media-source-badge" hidden>未載入</span>
       <div class="media-filter-toggle" role="group" aria-label="媒體顯示模式">
         <button type="button" class="media-filter-btn on" id="media-filter-all" title="顯示全部已匯入媒體">全部媒體</button>
@@ -299,22 +307,22 @@
 
     <div class="media-pdf-controls" id="media-pdf-controls">
       <div class="media-pdf-nav-row">
-        <button class="btn media-pdf-step" type="button" id="media-pdf-prev" title="上一頁" aria-label="上一頁">‹ 上頁</button>
-        <div class="media-page-now" id="media-page-now">現在第 — / — 頁</div>
-        <button class="btn media-pdf-step" type="button" id="media-pdf-next" title="下一頁" aria-label="下一頁">下頁 ›</button>
-        <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟 PDF">新分頁開啟</a>
+        <button class="btn media-pdf-step" type="button" id="media-pdf-prev" title="上一頁" aria-label="上一頁">‹</button>
+        <button type="button" class="media-page-now" id="media-page-now" title="點擊跳至頁碼" aria-label="目前頁碼，點擊跳頁">第 — / — 頁</button>
+        <button class="btn media-pdf-step" type="button" id="media-pdf-next" title="下一頁" aria-label="下一頁">›</button>
+        <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前頁">新分頁</a>
       </div>
-      <div class="media-nums" id="media-pdf-nums" aria-label="頁碼"></div>
+      <div class="media-nums" id="media-pdf-nums" aria-label="頁碼" hidden></div>
     </div>
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=76"></script>
-  <script src="vendor/geopackage.min.js?v=76"></script>
-  <script src="vendor/xlsx.full.min.js?v=76"></script>
-  <script src="vendor/pdf.min.js?v=76"></script>
-  <script src="media.js?v=76"></script>
-  <script src="import-extras.js?v=76"></script>
-  <script src="app.js?v=76"></script>
+  <script src="vendor/leaflet.js?v=77"></script>
+  <script src="vendor/geopackage.min.js?v=77"></script>
+  <script src="vendor/xlsx.full.min.js?v=77"></script>
+  <script src="vendor/pdf.min.js?v=77"></script>
+  <script src="media.js?v=77"></script>
+  <script src="import-extras.js?v=77"></script>
+  <script src="app.js?v=77"></script>
 </body>
 </html>

@@ -37,12 +37,17 @@
 
   const LS_SESSION = "tp-pane-session-trees";
   const LS_HIDE_MEDIA = "tp-pane-hide-media";
+  const LS_INK_PREFS = "tp-pane-ink-prefs";
   let persistTimer = null;
   let restoring = false;
 
   const state = {
     trees: [],          // { id, props, feature, hasCoords, x, y, path, annot, leafletMarker }
-    drawStrokes: [],    // freehand ink only (not trees): [{ path: [{x,y}, ...] }]
+    drawStrokes: [],    // freehand ink for CURRENT map only: [{ path, color?, width? }]
+    drawStrokesByMap: {}, // per-map ink: { [mapKey]: strokes[] } — never bleed across maps
+    drawMapKey: null,   // active map ink key (file name identity)
+    inkColor: "#38bdf8",
+    inkWidth: 2.25,
     sourceName: "",
     mapRefUrl: null,
     mapRefRasterUrl: null, // PNG/JPG blob used for annotate when PDF was rasterized
@@ -104,13 +109,126 @@
     });
   }
 
-  function serializeDrawStrokes() {
-    return (state.drawStrokes || []).map(function (s) {
+  function mapInkKey(name) {
+    const s = String(name || "").trim().toLowerCase();
+    return s || "";
+  }
+
+  function normalizeStrokeRec(s) {
+    if (!s) return null;
+    const path = Array.isArray(s.path) ? s.path : null;
+    if (!path || !path.length) return null;
+    const pts = path.map(function (p) {
+      return { x: Number(p.x), y: Number(p.y) };
+    }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); });
+    if (!pts.length) return null;
+    const out = { path: pts };
+    if (s.color) out.color = String(s.color);
+    const w = Number(s.width);
+    if (isFinite(w) && w > 0) out.width = w;
+    return out;
+  }
+
+  function serializeDrawStrokes(list) {
+    const src = Array.isArray(list) ? list : (state.drawStrokes || []);
+    return src.map(function (s) {
       const path = Array.isArray(s && s.path) ? s.path : null;
       const norm = path ? simplifyPath(path) || normalizePath(path) : null;
       if (!norm || !norm.length) return null;
-      return { path: norm.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; }) };
+      const out = { path: norm.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; }) };
+      if (s && s.color) out.color = String(s.color);
+      const w = Number(s && s.width);
+      if (isFinite(w) && w > 0) out.width = w;
+      return out;
     }).filter(Boolean);
+  }
+
+  function serializeDrawStrokesByMap() {
+    const bag = state.drawStrokesByMap || {};
+    const out = {};
+    Object.keys(bag).forEach(function (k) {
+      const strokes = serializeDrawStrokes(bag[k]);
+      if (strokes.length) out[k] = strokes;
+    });
+    return out;
+  }
+
+  /** Persist current map's ink under its key so switching maps never bleeds strokes. */
+  function saveCurrentMapInk() {
+    const key = state.drawMapKey || mapInkKey(state.mapRefName);
+    if (!key) {
+      state.drawStrokes = state.drawStrokes || [];
+      return;
+    }
+    state.drawStrokesByMap = state.drawStrokesByMap || {};
+    state.drawStrokesByMap[key] = serializeDrawStrokes(state.drawStrokes);
+    state.drawMapKey = key;
+  }
+
+  function loadMapInk(name) {
+    const key = mapInkKey(name);
+    state.drawMapKey = key || null;
+    const bag = state.drawStrokesByMap || {};
+    const raw = (key && Array.isArray(bag[key])) ? bag[key] : [];
+    state.drawStrokes = raw.map(normalizeStrokeRec).filter(Boolean);
+  }
+
+  function loadInkPrefs() {
+    try {
+      const raw = localStorage.getItem(LS_INK_PREFS);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data && data.color) state.inkColor = String(data.color);
+      const w = Number(data && data.width);
+      if (isFinite(w) && w >= 1 && w <= 12) state.inkWidth = w;
+    } catch (_) {}
+  }
+
+  function saveInkPrefs() {
+    try {
+      localStorage.setItem(LS_INK_PREFS, JSON.stringify({
+        color: state.inkColor,
+        width: state.inkWidth
+      }));
+    } catch (_) {}
+  }
+
+  function syncInkControlsUi() {
+    const colorEl = $("map-ink-color");
+    const widthEl = $("map-ink-width");
+    if (colorEl) colorEl.value = state.inkColor || "#38bdf8";
+    if (widthEl) widthEl.value = String(state.inkWidth || 2.25);
+  }
+
+  function bindInkControls() {
+    loadInkPrefs();
+    syncInkControlsUi();
+    const colorEl = $("map-ink-color");
+    const widthEl = $("map-ink-width");
+    if (colorEl && !colorEl._inkBound) {
+      colorEl._inkBound = true;
+      colorEl.addEventListener("input", function () {
+        state.inkColor = colorEl.value || "#38bdf8";
+        saveInkPrefs();
+      });
+      colorEl.addEventListener("change", function () {
+        state.inkColor = colorEl.value || "#38bdf8";
+        saveInkPrefs();
+      });
+    }
+    if (widthEl && !widthEl._inkBound) {
+      widthEl._inkBound = true;
+      widthEl.addEventListener("input", function () {
+        const w = Number(widthEl.value);
+        if (isFinite(w) && w > 0) state.inkWidth = w;
+        saveInkPrefs();
+      });
+      widthEl.addEventListener("change", function () {
+        const w = Number(widthEl.value);
+        if (isFinite(w) && w > 0) state.inkWidth = w;
+        saveInkPrefs();
+      });
+    }
   }
 
     function persistSession() {
@@ -119,15 +237,18 @@
     const mapMeta = state.mapRefUrl
       ? { name: state.mapRefName || "", kind: state.mapRefKind || null }
       : (state.mapRefMeta || null);
+    saveCurrentMapInk();
     const payload = {
-      v: 1,
+      v: 2,
       savedAt: Date.now(),
       sourceName: state.sourceName || "",
       idMode: state.idMode || "auto",
       forceMapRef: document.body.classList.contains("force-map-ref"),
       mapRef: mapMeta,
       trees: serializeTrees(),
-      drawStrokes: serializeDrawStrokes()
+      drawMapKey: state.drawMapKey || null,
+      drawStrokes: serializeDrawStrokes(),
+      drawStrokesByMap: serializeDrawStrokesByMap()
     };
     try {
       localStorage.setItem(LS_SESSION, JSON.stringify(payload));
@@ -168,6 +289,8 @@
     try { localStorage.removeItem(LS_SESSION); } catch (_) {}
     state.mapRefMeta = null;
     state.drawStrokes = [];
+    state.drawStrokesByMap = {};
+    state.drawMapKey = null;
   }
 
   function rebuildFeature(rec) {
@@ -194,7 +317,11 @@
     if (!data) return;
     const hasTrees = Array.isArray(data.trees) && data.trees.length;
     const hasDraw = Array.isArray(data.drawStrokes) && data.drawStrokes.length;
-    if (!hasTrees && !hasDraw) return;
+    const hasDrawBag = !!(data.drawStrokesByMap && typeof data.drawStrokesByMap === "object" &&
+      Object.keys(data.drawStrokesByMap).some(function (k) {
+        return Array.isArray(data.drawStrokesByMap[k]) && data.drawStrokesByMap[k].length;
+      }));
+    if (!hasTrees && !hasDraw && !hasDrawBag) return;
 
     restoring = true;
     try {
@@ -203,16 +330,35 @@
       state.mapRefMeta = data.mapRef || null;
 
       clearLeafletAnnotMarkers();
-      state.drawStrokes = hasDraw
-        ? data.drawStrokes.map(function (s) {
-            const path = Array.isArray(s && s.path) ? s.path : null;
-            if (!path || !path.length) return null;
-            const pts = path.map(function (p) {
-              return { x: Number(p.x), y: Number(p.y) };
-            }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); });
-            return pts.length ? { path: pts } : null;
-          }).filter(Boolean)
-        : [];
+      state.drawStrokesByMap = {};
+      if (data.drawStrokesByMap && typeof data.drawStrokesByMap === "object") {
+        Object.keys(data.drawStrokesByMap).forEach(function (k) {
+          const key = mapInkKey(k);
+          if (!key) return;
+          const list = data.drawStrokesByMap[k];
+          if (!Array.isArray(list)) return;
+          const strokes = list.map(normalizeStrokeRec).filter(Boolean);
+          if (strokes.length) state.drawStrokesByMap[key] = strokes;
+        });
+      }
+      const metaName = (data.mapRef && data.mapRef.name) || "";
+      const preferKey = mapInkKey(data.drawMapKey || metaName);
+      if (preferKey && state.drawStrokesByMap[preferKey]) {
+        state.drawMapKey = preferKey;
+        state.drawStrokes = (state.drawStrokesByMap[preferKey] || []).slice();
+      } else if (hasDraw) {
+        // Back-compat: single global list → attach to remembered map name if any
+        state.drawStrokes = data.drawStrokes.map(normalizeStrokeRec).filter(Boolean);
+        if (preferKey) {
+          state.drawMapKey = preferKey;
+          state.drawStrokesByMap[preferKey] = serializeDrawStrokes(state.drawStrokes);
+        } else {
+          state.drawMapKey = null;
+        }
+      } else {
+        state.drawStrokes = [];
+        state.drawMapKey = preferKey || null;
+      }
       state.trees = hasTrees ? data.trees.map((rec) => {
         const feature = rebuildFeature(rec);
         const hasCoords = !!(feature.geometry && feature.geometry.type === "Point");
@@ -1478,6 +1624,8 @@
   }
 
   function showMapRef(file) {
+    // Save previous map's ink under its key BEFORE switching (never bleed onto new map)
+    saveCurrentMapInk();
     revokeMapRefUrl();
     hideMapRefViewers();
     resetMapRefZoom();
@@ -1487,6 +1635,8 @@
     state.mapRefUrl = url;
     state.mapRefName = name;
     state.mapRefRasterized = false;
+    // Load only this map's strokes (empty if first time)
+    loadMapInk(name);
 
     const frame = $("map-ref-frame");
     const obj = $("map-ref-object");
@@ -1512,9 +1662,10 @@
       state.mapRefKind = "pdf";
       if (openTab) {
         openTab.hidden = false;
-        openTab.href = url;
-        openTab.setAttribute("download", name);
-        openTab.textContent = "新分頁開啟地圖 PDF";
+        openTab.href = String(url).split("#")[0] + "#page=1";
+        openTab.removeAttribute("download");
+        openTab.textContent = "新分頁";
+        openTab.title = "新分頁開啟目前地圖 PDF（第 1 頁）";
       }
       // Prefer rasterized page-1 image so annotate % matches map pixels (same as PNG/JPG)
       setImportStatus("正在將 PDF 轉成影像以便加樹…", "");
@@ -1563,16 +1714,20 @@
       openTab.hidden = false;
       openTab.href = url;
       openTab.removeAttribute("download");
-      openTab.textContent = "新分頁開啟地圖圖片";
+      openTab.textContent = "新分頁";
+      openTab.title = "新分頁開啟目前地圖圖片";
     }
     finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可直接畫墨跡；開「加樹模式」短點加樹）");
   }
 
   function clearMapRef() {
+    saveCurrentMapInk();
     revokeMapRefUrl();
     hideMapRefViewers();
     resetMapRefZoom();
     state.mapRefMeta = null;
+    state.drawStrokes = [];
+    state.drawMapKey = null;
     document.body.classList.remove("force-map-ref");
     updateMapRefVisibility();
     renderAnnotOverlay();
@@ -1646,6 +1801,8 @@
     clearLeafletAnnotMarkers();
     state.trees = [];
     state.drawStrokes = [];
+    state.drawStrokesByMap = {};
+    state.drawMapKey = null;
     state.sourceName = "";
     renderTreeList();
     clearPersistedSession();
@@ -1695,7 +1852,7 @@
       if (btn.id === "btn-annot-mode") {
         btn.textContent = state.annotateMode ? "加樹模式 · 開 ON" : "加樹模式 Add tree";
       } else {
-        btn.textContent = state.annotateMode ? "加樹 · 開" : "加樹模式";
+        btn.textContent = state.annotateMode ? "加樹·開" : "加樹";
       }
     });
     syncAnnotLayerActive();
@@ -2014,8 +2171,13 @@
     (state.drawStrokes || []).forEach(function (s) {
       const inkPts = (s && s.path && s.path.length >= 2) ? s.path : null;
       if (!inkPts) return;
+      const col = (s.color && String(s.color)) || state.inkColor || "#38bdf8";
+      const w = (isFinite(Number(s.width)) && Number(s.width) > 0)
+        ? Number(s.width)
+        : (state.inkWidth || 2.25);
       pathsHtml += '<path class="annot-draw-ink" d="' + pathToSvgD(inkPts) +
-        '" fill="none" vector-effect="non-scaling-stroke"></path>';
+        '" fill="none" stroke="' + escapeHtml(col) + '" stroke-width="' + w +
+        '" vector-effect="non-scaling-stroke"></path>';
     });
     state.trees.forEach((t) => {
       if (t.x == null || t.y == null) return;
@@ -2321,6 +2483,8 @@
       }
       prev.removeAttribute("hidden");
       prev.setAttribute("d", pathToSvgD(pts));
+      prev.setAttribute("stroke", state.inkColor || "#38bdf8");
+      prev.setAttribute("stroke-width", String(state.inkWidth || 2.25));
     }
 
     function beginDrag() {
@@ -2388,11 +2552,16 @@
       suppressClickUntil = Date.now() + 450;
       if (!pts || pts.length < 2) return; // ignore tiny dots — not ink
       state.drawStrokes = state.drawStrokes || [];
-      state.drawStrokes.push({ path: pts });
+      state.drawStrokes.push({
+        path: pts,
+        color: state.inkColor || "#38bdf8",
+        width: state.inkWidth || 2.25
+      });
       // Cap session ink so localStorage stays bounded
       if (state.drawStrokes.length > 400) {
         state.drawStrokes = state.drawStrokes.slice(-400);
       }
+      saveCurrentMapInk();
       schedulePersist();
       renderAnnotOverlay();
       setImportStatus("已畫墨跡（不加樹）· 共 " + state.drawStrokes.length + " 筆", "ok");
@@ -2776,6 +2945,7 @@
     }
 
     initAnnotControls();
+    bindInkControls();
 
     // Re-evaluate visibility when vectors change (poll light)
     setInterval(function () {

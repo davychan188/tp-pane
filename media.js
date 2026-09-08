@@ -532,26 +532,43 @@
   function renderPageChips() {
     const nums = $("media-pdf-nums");
     const pageNow = $("media-page-now");
-    if (!nums) return;
-    nums.innerHTML = "";
+    // v77: remove #01/#02 chips under the PDF — jump via 「第 N/M 頁」 instead
+    if (nums) {
+      nums.innerHTML = "";
+      nums.hidden = true;
+    }
     const pages = state.relatedPages || [];
     if (!pages.length) {
-      if (pageNow) pageNow.textContent = state.pdfs.length ? "現在第 — / — 頁" : "未匯入 PDF";
+      if (pageNow) {
+        pageNow.textContent = state.pdfs.length ? "第 — / — 頁" : "未匯入 PDF";
+        pageNow.disabled = true;
+      }
       return;
     }
-    pages.forEach((n) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "media-num" + (n === state.pdfPage ? " on" : "");
-      b.textContent = "#" + String(n).padStart(2, "0");
-      b.setAttribute("aria-label", "第 " + n + " 頁");
-      b.title = "第 " + n + " 頁";
-      b.addEventListener("click", () => jumpToPdfPage(n));
-      nums.appendChild(b);
-    });
     if (pageNow) {
-      pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
+      pageNow.disabled = false;
+      pageNow.textContent = "第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
+      pageNow.title = "點擊跳至頁碼（目前第 " + (state.pdfPage || pages[0]) + " 頁）";
     }
+  }
+
+  function promptJumpPdfPage() {
+    const pages = state.relatedPages || [];
+    if (!pages.length) return;
+    const total = state.pdfTotal || pages[pages.length - 1] || pages.length;
+    const cur = state.pdfPage || pages[0] || 1;
+    const raw = window.prompt("跳至第幾頁？（1–" + total + "）", String(cur));
+    if (raw == null) return;
+    const n = parseInt(String(raw).trim(), 10);
+    if (!isFinite(n)) return;
+    jumpToPdfPage(n);
+  }
+
+  function pdfOpenHref(url, page) {
+    if (!url) return "#";
+    const base = String(url).split("#")[0];
+    const p = Math.max(1, Number(page) || 1);
+    return base + "#page=" + p;
   }
 
   function renderPdfChips() {
@@ -583,7 +600,7 @@
         else empty.textContent = "沒有可顯示的 PDF";
       }
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
-      if (title) title.innerHTML = '調查 PDF <span class="tag">頁面檢視</span>';
+      if (title) title.innerHTML = '樹木 PDF <span class="tag">頁</span>';
       return;
     }
 
@@ -593,11 +610,13 @@
     state.pdfPage = pageNum;
     if (openTab) {
       openTab.hidden = false;
-      openTab.href = pdf.url;
-      openTab.setAttribute("download", pdf.name || "report.pdf");
+      openTab.href = pdfOpenHref(pdf.url, pageNum);
+      openTab.removeAttribute("download");
+      openTab.textContent = "新分頁";
+      openTab.title = "新分頁開啟目前第 " + pageNum + " 頁";
     }
     if (title) {
-      title.innerHTML = "調查 PDF · " + escapeHtml(pdf.name) + ' <span class="tag">頁面檢視</span>';
+      title.innerHTML = escapeHtml(pdf.name) + ' <span class="tag">頁</span>';
     }
     updatePdfZoomLabel();
     renderPdfCanvas();
@@ -607,7 +626,16 @@
     const pages = state.relatedPages || [];
     if (!pages.length) return;
     let page = Number(n);
-    if (!pages.includes(page)) page = pages[0];
+    if (!isFinite(page)) return;
+    page = Math.round(page);
+    if (!pages.includes(page)) {
+      const total = state.pdfTotal || pages[pages.length - 1] || 1;
+      if (page < 1 || page > total) {
+        setStatusHint("頁碼需介乎 1–" + total);
+        return;
+      }
+      // Allow jump even if relatedPages temporarily incomplete
+    }
     state.pdfPage = page;
     renderPageChips();
     showPdfInFrame(page);
@@ -1655,8 +1683,10 @@
 
     const pdfPrev = $("media-pdf-prev");
     const pdfNext = $("media-pdf-next");
+    const pageNowBtn = $("media-page-now");
     if (pdfPrev) pdfPrev.addEventListener("click", () => stepPdfPage(-1));
     if (pdfNext) pdfNext.addEventListener("click", () => stepPdfPage(1));
+    if (pageNowBtn) pageNowBtn.addEventListener("click", () => promptJumpPdfPage());
 
     setShowPhotos(false);
     ensurePdfjsConfigured();
