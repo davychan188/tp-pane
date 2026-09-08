@@ -1637,26 +1637,26 @@ body.has-tree-list .tree-list-panel,
 .tree-list-edit-overlay-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(80vw, 720px);
+  gap: 8px;
+  width: min(40vw, 360px);
   max-width: calc(100vw - 24px);
-  min-width: min(70vw, 280px);
-  padding: 14px 16px 16px;
-  border-radius: 14px;
+  min-width: min(35vw, 200px);
+  padding: 10px 12px 12px;
+  border-radius: 12px;
   border: 2px solid var(--accent);
   background: #0b1220;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(91, 140, 255, 0.35);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(91, 140, 255, 0.35);
   box-sizing: border-box;
   transform: none;
 }
 .tree-list-edit-overlay.is-wide .tree-list-edit-overlay-panel {
-  width: min(84vw, 780px);
+  width: min(42vw, 390px);
 }
 .tree-list-edit-overlay.is-num .tree-list-edit-overlay-panel {
-  width: min(72vw, 520px);
+  width: min(36vw, 260px);
 }
 .tree-list-edit-overlay-cap {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
   color: #9eb6ff;
@@ -1666,14 +1666,14 @@ body.has-tree-list .tree-list-panel,
 .tree-list-edit-overlay .tree-list-input {
   display: block;
   width: 100%;
-  min-height: max(42vh, 220px);
-  height: max(46vh, 240px);
-  max-height: 60vh;
+  min-height: max(21vh, 110px);
+  height: max(23vh, 120px);
+  max-height: 30vh;
   resize: none;
-  font-size: 32px;
-  line-height: 1.45;
-  padding: 18px 20px;
-  border-radius: 12px;
+  font-size: 20px;
+  line-height: 1.4;
+  padding: 12px 14px;
+  border-radius: 10px;
   border: 2px solid rgba(91, 140, 255, 0.85);
   background: #020617;
   color: var(--text);
@@ -1685,11 +1685,11 @@ body.has-tree-list .tree-list-panel,
   touch-action: manipulation;
 }
 .tree-list-edit-overlay.is-num .tree-list-edit-overlay-input {
-  min-height: max(36vh, 180px);
-  height: max(40vh, 200px);
+  min-height: max(18vh, 90px);
+  height: max(20vh, 100px);
   text-align: right;
   font-variant-numeric: tabular-nums;
-  font-size: 34px;
+  font-size: 22px;
 }
 .feature-attr-table td.editable.editing,
 .feature-metric-value.editable.editing {

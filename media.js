@@ -842,6 +842,33 @@
     }
   }
 
+
+  /** True for DBH / Height / Spread (canonical keys + METRIC_DEFS aliases). */
+  function isMetricAttrKey(key) {
+    const f = String(key || "");
+    const fl = f.toLowerCase();
+    if (f === "DBH" || f === "Height" || f === "Spread" ||
+        fl === "dbh" || fl === "height" || fl === "spread") return true;
+    return METRIC_DEFS.some((d) => d.key === f || (d.aliases && d.aliases.indexOf(f) >= 0));
+  }
+
+  /**
+   * Sanitize metric commit value to a clean numeric string.
+   * Empty stays empty; strips units/letters; allows one decimal; rejects non-numeric.
+   */
+  function sanitizeMetricNumber(raw) {
+    let s = String(raw == null ? "" : raw).replace(/\r\n/g, "\n").replace(/\n/g, " ").trim();
+    if (!s) return "";
+    s = s.replace(/,/g, "");
+    const m = s.match(/-?\d*\.?\d+/);
+    if (!m) return "";
+    const token = m[0];
+    if (token === "." || token === "-" || token === "-.") return "";
+    const n = parseFloat(token);
+    if (!Number.isFinite(n)) return "";
+    return String(n);
+  }
+
   /** Mobile/iPad keyboard / Scribble hints for attrs enlarge-edit overlay. */
   function configureAttrInlineInput(inp, key) {
     if (!inp) return;
@@ -851,9 +878,7 @@
     inp.setAttribute("spellcheck", "false");
     const f = String(key || "");
     const fl = f.toLowerCase();
-    const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
-      fl === "dbh" || fl === "height" || fl === "spread" ||
-      METRIC_DEFS.some((d) => d.key === f || (d.aliases && d.aliases.indexOf(f) >= 0));
+    const isMetric = isMetricAttrKey(key);
     const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
     const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注" ||
       (typeof REMARKS_ALIASES !== "undefined" && REMARKS_ALIASES.indexOf(f) >= 0);
@@ -910,6 +935,15 @@
     wrap.className = "tree-list-edit-overlay attr-edit-overlay";
     wrap.setAttribute("role", "dialog");
     wrap.setAttribute("aria-modal", "true");
+    if (isMetricAttrKey(key)) wrap.classList.add("is-num");
+    const isSpeciesOrRemarks = (function () {
+      const f = String(key || "");
+      const fl = f.toLowerCase();
+      return f === "Species" || fl === "species" || f === "樹種" || f === "树种" ||
+        f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注" ||
+        (typeof REMARKS_ALIASES !== "undefined" && REMARKS_ALIASES.indexOf(f) >= 0);
+    })();
+    if (isSpeciesOrRemarks) wrap.classList.add("is-wide");
     const panel = document.createElement("div");
     panel.className = "tree-list-edit-overlay-panel";
     const cap = document.createElement("div");
@@ -944,7 +978,11 @@
       window.removeEventListener("scroll", onWinChange, true);
       el.classList.remove("editing");
       removeAttrEditOverlay();
-      const text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trim();
+      let text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trim();
+      // DBH / Height / Spread → numeric-only result (decimals OK; strip units/letters)
+      if (ok && isMetricAttrKey(key)) {
+        text = sanitizeMetricNumber(text);
+      }
       if (!ok || text === old) {
         if (el.isConnected) {
           el.textContent = displayValue(old);

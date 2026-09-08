@@ -375,6 +375,32 @@
     return true;
   }
 
+
+  /** True for DBH / Height / Spread (and common aliases). */
+  function isMetricListField(field) {
+    const f = String(field || "");
+    const fl = f.toLowerCase();
+    return f === "DBH" || f === "Height" || f === "Spread" ||
+      fl === "dbh" || fl === "height" || fl === "spread";
+  }
+
+  /**
+   * Sanitize metric commit value to a clean numeric string.
+   * Empty stays empty; strips units/letters; allows one decimal; rejects non-numeric.
+   */
+  function sanitizeMetricNumber(raw) {
+    let s = String(raw == null ? "" : raw).replace(/\r\n/g, "\n").replace(/\n/g, " ").trim();
+    if (!s) return "";
+    s = s.replace(/,/g, "");
+    const m = s.match(/-?\d*\.?\d+/);
+    if (!m) return "";
+    const token = m[0];
+    if (token === "." || token === "-" || token === "-.") return "";
+    const n = parseFloat(token);
+    if (!Number.isFinite(n)) return "";
+    return String(n);
+  }
+
   /** Mobile/iPad keyboard / Scribble hints for list enlarge-edit overlay. */
   function configureListInlineInput(inp, field) {
     if (!inp) return;
@@ -384,8 +410,7 @@
     inp.setAttribute("spellcheck", "false");
     const f = String(field || "");
     const fl = f.toLowerCase();
-    const isMetric = f === "DBH" || f === "Height" || f === "Spread" ||
-      fl === "dbh" || fl === "height" || fl === "spread";
+    const isMetric = isMetricListField(field);
     const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
     const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注";
     if (isMetric) {
@@ -486,9 +511,14 @@
       window.removeEventListener("scroll", onWinChange, true);
       fieldEl.classList.remove("editing");
       removeListEditOverlay();
-      const text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trimEnd();
+      let text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trimEnd();
       // For Tree ID keep raw trimmed; for others allow empty
-      const next = (field === "Tree ID") ? text.trim() : text.trim();
+      let next = (field === "Tree ID") ? text.trim() : text.trim();
+      // DBH / Height / Spread → numeric-only result (decimals OK; strip units/letters)
+      if (ok && isMetricListField(field)) {
+        next = sanitizeMetricNumber(next);
+        text = next;
+      }
       if (!ok || next === old) {
         if (fieldEl.isConnected) {
           fieldEl.textContent = field === "Tree ID" ? old : displayListVal(old);
