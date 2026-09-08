@@ -874,32 +874,90 @@
     }
   }
 
+  function removeAttrEditOverlay() {
+    const node = document.getElementById("attr-edit-overlay");
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+  }
+
+  function placeAttrEditOverlay(wrap, anchorEl) {
+    if (!wrap || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const pad = 10;
+    const ow = Math.max(wrap.offsetWidth || 0, 240);
+    const oh = Math.max(wrap.offsetHeight || 0, 140);
+    let left = rect.left;
+    let top = rect.top - 6;
+    if (left + ow > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - ow - pad);
+    if (left < pad) left = pad;
+    if (top + oh > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - oh - pad);
+    if (top < pad) top = pad;
+    wrap.style.left = left + "px";
+    wrap.style.top = top + "px";
+  }
+
   function startAttrEdit(el) {
     if (!el || el.classList.contains("editing")) return;
     const key = el.getAttribute("data-attr-key");
     if (!key || !state.selectedProps) return;
+    const prior = document.querySelector(".editable.editing, .feature-metric-value.editing");
+    if (prior && prior !== el) {
+      prior.classList.remove("editing");
+      removeAttrEditOverlay();
+    }
     const old = state.selectedProps[key] == null ? "" : String(state.selectedProps[key]);
     el.classList.add("editing");
-    el.innerHTML = "<input type='text' />";
-    const inp = el.querySelector("input");
+    // Ghost text stays in-cell; handwriting editor floats above clipped panels
+    el.textContent = displayValue(old);
+    el.classList.toggle("empty", old === "");
+
+    removeAttrEditOverlay();
+    const wrap = document.createElement("div");
+    wrap.id = "attr-edit-overlay";
+    wrap.className = "tree-list-edit-overlay attr-edit-overlay";
+    const cap = document.createElement("div");
+    cap.className = "tree-list-edit-overlay-cap";
+    cap.textContent = String(key);
+    const inp = document.createElement("textarea");
+    inp.className = "tree-list-input tree-list-edit-overlay-input";
+    inp.setAttribute("rows", "3");
+    inp.setAttribute("enterkeyhint", "done");
     configureAttrInlineInput(inp, key);
     inp.value = old;
+    wrap.appendChild(cap);
+    wrap.appendChild(inp);
+    document.body.appendChild(wrap);
+    placeAttrEditOverlay(wrap, el);
+    requestAnimationFrame(function () { placeAttrEditOverlay(wrap, el); });
     inp.focus();
-    inp.select();
+    try { inp.select(); } catch (_) {}
+
     let done = false;
+    function onWinChange() {
+      if (!done) placeAttrEditOverlay(wrap, el);
+    }
+    window.addEventListener("resize", onWinChange);
+    window.addEventListener("scroll", onWinChange, true);
+
     function finish(ok) {
       if (done) return;
       done = true;
+      window.removeEventListener("resize", onWinChange);
+      window.removeEventListener("scroll", onWinChange, true);
       el.classList.remove("editing");
-      const text = inp.value;
+      removeAttrEditOverlay();
+      const text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trim();
       if (!ok || text === old) {
-        el.textContent = displayValue(old);
-        el.classList.toggle("empty", old === "");
+        if (el.isConnected) {
+          el.textContent = displayValue(old);
+          el.classList.toggle("empty", old === "");
+        }
         return;
       }
       applyAttrEdit(key, text);
-      el.textContent = displayValue(text);
-      el.classList.toggle("empty", text === "");
+      if (el.isConnected) {
+        el.textContent = displayValue(text);
+        el.classList.toggle("empty", text === "");
+      }
       const box = $("feature-attrs-body");
       if (box) {
         box.querySelectorAll("[data-attr-key]").forEach((node) => {
@@ -917,10 +975,12 @@
       }
     }
     inp.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }
       if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
     });
-    inp.addEventListener("blur", () => finish(true));
+    inp.addEventListener("blur", () => { setTimeout(() => finish(true), 0); });
+    wrap.addEventListener("click", (ev) => ev.stopPropagation());
+    wrap.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   }
 
   function bindFeatureAttrEdits(box) {

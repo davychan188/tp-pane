@@ -328,7 +328,7 @@
         }
         if (t.leafletMarker.unbindTooltip) t.leafletMarker.unbindTooltip();
         t.leafletMarker.bindTooltip(String(newId), {
-          permanent: true, direction: "top", offset: [0, -6], className: "annot-leaflet-label"
+          permanent: false, direction: "top", offset: [0, -4], className: "annot-leaflet-label"
         });
       } catch (_) {}
     }
@@ -371,6 +371,27 @@
     inp.setAttribute("autocomplete", "off");
   }
 
+  function removeListEditOverlay() {
+    const el = document.getElementById("tree-list-edit-overlay");
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function placeListEditOverlay(wrap, fieldEl) {
+    if (!wrap || !fieldEl) return;
+    const rect = fieldEl.getBoundingClientRect();
+    const pad = 10;
+    const ow = Math.max(wrap.offsetWidth || 0, 240);
+    const oh = Math.max(wrap.offsetHeight || 0, 140);
+    let left = rect.left;
+    let top = rect.top - 6;
+    if (left + ow > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - ow - pad);
+    if (left < pad) left = pad;
+    if (top + oh > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - oh - pad);
+    if (top < pad) top = pad;
+    wrap.style.left = left + "px";
+    wrap.style.top = top + "px";
+  }
+
   function startTreeListFieldEdit(fieldEl) {
     if (!fieldEl || fieldEl.classList.contains("editing")) return;
     const treeId = fieldEl.getAttribute("data-tree-id");
@@ -378,40 +399,82 @@
     if (!treeId || !field) return;
     const t = state.trees.find((x) => String(x.id).toUpperCase() === String(treeId).toUpperCase());
     if (!t) return;
+    // Close any prior overlay editor (one at a time)
+    const prior = document.querySelector(".tree-list-field.editing");
+    if (prior && prior !== fieldEl) {
+      prior.classList.remove("editing");
+      removeListEditOverlay();
+    }
     selectTreeFromList(treeId);
     const old = (field === "Tree ID")
       ? String(t.id)
       : (t.props && t.props[field] != null ? String(t.props[field]) : "");
     fieldEl.classList.add("editing");
-    fieldEl.innerHTML = "<input type='text' class='tree-list-input' />";
-    const inp = fieldEl.querySelector("input");
+    // Keep cell text as a ghost; real editor is a fixed overlay (avoids overflow clipping)
+    fieldEl.textContent = field === "Tree ID" ? old : displayListVal(old);
+    fieldEl.classList.toggle("empty", field !== "Tree ID" && (old == null || old === ""));
+
+    removeListEditOverlay();
+    const wrap = document.createElement("div");
+    wrap.id = "tree-list-edit-overlay";
+    wrap.className = "tree-list-edit-overlay";
+    if (fieldEl.classList.contains("tree-list-num")) wrap.classList.add("is-num");
+    if (fieldEl.classList.contains("tree-list-remarks") || fieldEl.classList.contains("tree-list-sp")) {
+      wrap.classList.add("is-wide");
+    }
+    const cap = document.createElement("div");
+    cap.className = "tree-list-edit-overlay-cap";
+    cap.textContent = String(field) + " · " + String(treeId);
+    const inp = document.createElement("textarea");
+    inp.className = "tree-list-input tree-list-edit-overlay-input";
+    inp.setAttribute("rows", "3");
+    inp.setAttribute("enterkeyhint", "done");
     configureListInlineInput(inp, field);
     inp.value = old;
+    wrap.appendChild(cap);
+    wrap.appendChild(inp);
+    document.body.appendChild(wrap);
+    placeListEditOverlay(wrap, fieldEl);
+    // Reposition after layout / keyboard
+    requestAnimationFrame(function () { placeListEditOverlay(wrap, fieldEl); });
     inp.focus();
-    inp.select();
+    try { inp.select(); } catch (_) {}
+
     let done = false;
+    function onWinChange() {
+      if (!done) placeListEditOverlay(wrap, fieldEl);
+    }
+    window.addEventListener("resize", onWinChange);
+    window.addEventListener("scroll", onWinChange, true);
+
     function finish(ok) {
       if (done) return;
       done = true;
+      window.removeEventListener("resize", onWinChange);
+      window.removeEventListener("scroll", onWinChange, true);
       fieldEl.classList.remove("editing");
-      const text = inp.value;
-      if (!ok || text === old) {
-        fieldEl.textContent = field === "Tree ID" ? old : displayListVal(old);
-        fieldEl.classList.toggle("empty", field !== "Tree ID" && (old == null || old === ""));
+      removeListEditOverlay();
+      const text = String(inp.value || "").replace(/\r\n/g, "\n").replace(/\n/g, " ").trimEnd();
+      // For Tree ID keep raw trimmed; for others allow empty
+      const next = (field === "Tree ID") ? text.trim() : text.trim();
+      if (!ok || next === old) {
+        if (fieldEl.isConnected) {
+          fieldEl.textContent = field === "Tree ID" ? old : displayListVal(old);
+          fieldEl.classList.toggle("empty", field !== "Tree ID" && (old == null || old === ""));
+        }
         return;
       }
       if (field === "Tree ID") {
-        if (!renameTreeId(treeId, text)) {
-          fieldEl.textContent = old;
+        if (!renameTreeId(treeId, next)) {
+          if (fieldEl.isConnected) fieldEl.textContent = old;
           return;
         }
         return;
       }
-      applyTreeAttr(treeId, field, text);
-      // applyTreeAttr schedules persist + may re-render; if not:
+      applyTreeAttr(treeId, field, next);
       if (fieldEl.isConnected) {
-        fieldEl.textContent = displayListVal(text);
-        fieldEl.classList.toggle("empty", text === "");
+        fieldEl.textContent = displayListVal(next);
+        fieldEl.classList.toggle("empty", next === "");
       }
       if (window.GpkgMedia && window.GpkgMedia.getState &&
           String(window.GpkgMedia.getState().treeId || "").toUpperCase() === String(treeId).toUpperCase()) {
@@ -420,13 +483,13 @@
       setImportStatus("已更新 " + field, "ok");
     }
     inp.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }
       if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
     });
-    inp.addEventListener("blur", () => finish(true));
-    // Stop row selection while typing
-    inp.addEventListener("click", (ev) => ev.stopPropagation());
-    inp.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    // Defer blur so tap-outside still commits after any click handlers
+    inp.addEventListener("blur", () => { setTimeout(() => finish(true), 0); });
+    wrap.addEventListener("click", (ev) => ev.stopPropagation());
+    wrap.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   }
 
   function bindTreeListInteractions(box) {
@@ -1579,7 +1642,7 @@
       ensureLeafletAnnotLayer(map);
       const ll = L.latLng(tree.feature.geometry.coordinates[1], tree.feature.geometry.coordinates[0]);
       const marker = L.circleMarker(ll, {
-        radius: 4.5,
+        radius: 2.75,
         color: "#fbbf24",
         weight: 1,
         fillColor: "#f59e0b",
@@ -1702,7 +1765,7 @@
       try {
         if (t.leafletMarker.setStyle) {
           t.leafletMarker.setStyle({
-            radius: on ? 5 : 4.5,
+            radius: on ? 3 : 2.75,
             weight: 1,
             color: on ? "#93c5fd" : "#fbbf24",
             fillColor: on ? "#3b82f6" : "#f59e0b",
