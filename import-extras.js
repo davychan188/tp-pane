@@ -418,14 +418,14 @@
         return;
       }
       const field = e.target.closest && e.target.closest(".tree-list-field");
-      const main = e.target.closest && e.target.closest(".tree-list-main, .tree-list-item");
+      const row = e.target.closest && e.target.closest(".tree-list-row");
       if (field) {
         e.preventDefault();
         startTreeListFieldEdit(field);
         return;
       }
-      if (main) {
-        const tid = main.getAttribute("data-tree-id");
+      if (row) {
+        const tid = row.getAttribute("data-tree-id");
         if (tid) selectTreeFromList(tid);
       }
     });
@@ -775,7 +775,29 @@
     const selected = (window.GpkgMedia && window.GpkgMedia.getState)
       ? window.GpkgMedia.getState().treeId
       : null;
-    let html = "";
+
+    function cellHtml(tid, field, raw, extraClass, tdClass) {
+      const empty = raw == null || raw === "";
+      const cls = "tree-list-field" + (extraClass ? " " + extraClass : "") + (empty ? " empty" : "");
+      const td = tdClass ? (' class="' + tdClass + '"') : "";
+      return "<td" + td + '><span class="' + cls + '" data-field="' + field + '" data-tree-id="' + tid +
+        '" title="點一下編輯">' + escapeHtml(field === "Tree ID" ? String(raw) : displayListVal(raw)) + "</span></td>";
+    }
+
+    let html = '<table class="tree-list-table" role="grid" aria-label="樹木列表">' +
+      "<thead><tr>" +
+      '<th class="col-id" scope="col">樹號</th>' +
+      '<th class="col-sp" scope="col">樹種 / Species</th>' +
+      '<th class="col-num" scope="col" title="胸徑 DBH">DBH</th>' +
+      '<th class="col-num" scope="col" title="高度 Height">H</th>' +
+      '<th class="col-num" scope="col" title="冠幅 Spread">S</th>' +
+      '<th class="col-remarks" scope="col">Remarks</th>' +
+      '<th class="col-xy" scope="col" title="Relative x %">x</th>' +
+      '<th class="col-xy" scope="col" title="Relative y %">y</th>' +
+      '<th class="col-pin" scope="col" title="有座標">📍</th>' +
+      '<th class="col-del" scope="col"><span class="sr-only">刪除</span></th>' +
+      "</tr></thead><tbody>";
+
     state.trees.forEach((t) => {
       const p = t.props || {};
       const sp = p.Species || p.species || "";
@@ -785,41 +807,27 @@
       const rem = p.Remarks != null ? p.Remarks : (p["備註"] != null ? p["備註"] : "");
       const on = selected && String(selected).toUpperCase() === String(t.id).toUpperCase();
       const tid = escapeHtml(t.id);
-      const xy = (t.x != null && t.y != null)
-        ? '<span class="tree-list-xy" title="Relative x/y %">x ' + fmtXy(t.x) + '% · y ' + fmtXy(t.y) + "%</span>"
-        : "";
-      html += '<div class="tree-list-row' + (on ? " on" : "") + '" data-tree-id="' + tid + '" role="option" aria-selected="' + (on ? "true" : "false") + '">' +
-        '<div class="tree-list-main' + (on ? " on" : "") + '" data-tree-id="' + tid + '" tabindex="0">' +
-        '<div class="tree-list-line1">' +
-        '<span class="tree-list-field tree-list-id" data-field="Tree ID" data-tree-id="' + tid +
-        '" title="點一下編輯編號">' + tid + "</span>" +
-        '<span class="tree-list-field tree-list-sp' + ((sp == null || sp === "") ? " empty" : "") +
-        '" data-field="Species" data-tree-id="' + tid +
-        '" title="點一下編輯樹種">' + escapeHtml(displayListVal(sp)) + "</span>" +
-        xy +
-        (t.hasCoords ? '<span class="tree-list-pin" title="有座標">📍</span>' : "") +
-        "</div>" +
-        '<div class="tree-list-metrics" aria-label="DBH H S">' +
-        '<span class="tree-list-metric"><abbr title="胸徑 DBH">DBH</abbr>' +
-        '<span class="tree-list-field' + ((dbh == null || dbh === "") ? " empty" : "") +
-        '" data-field="DBH" data-tree-id="' + tid + '">' + escapeHtml(displayListVal(dbh)) + "</span></span>" +
-        '<span class="tree-list-metric"><abbr title="高度 Height">H</abbr>' +
-        '<span class="tree-list-field' + ((h == null || h === "") ? " empty" : "") +
-        '" data-field="Height" data-tree-id="' + tid + '">' + escapeHtml(displayListVal(h)) + "</span></span>" +
-        '<span class="tree-list-metric"><abbr title="冠幅 Spread">S</abbr>' +
-        '<span class="tree-list-field' + ((s == null || s === "") ? " empty" : "") +
-        '" data-field="Spread" data-tree-id="' + tid + '">' + escapeHtml(displayListVal(s)) + "</span></span>" +
-        "</div>" +
-        '<div class="tree-list-remarks-row">' +
-        '<abbr title="備註 Remarks">備註</abbr>' +
-        '<span class="tree-list-field tree-list-remarks' + ((rem == null || rem === "") ? " empty" : "") +
-        '" data-field="Remarks" data-tree-id="' + tid +
-        '" title="點一下編輯備註">' + escapeHtml(displayListVal(rem)) + "</span>" +
-        "</div></div>" +
-        '<button type="button" class="tree-list-del" data-del-id="' + tid +
-        '" title="刪除 Delete" aria-label="刪除 ' + tid + '">✕</button>' +
-        "</div>";
+      const hasXy = t.x != null && t.y != null;
+      html += '<tr class="tree-list-row' + (on ? " on" : "") + '" data-tree-id="' + tid +
+        '" tabindex="0" aria-selected="' + (on ? "true" : "false") + '">' +
+        cellHtml(tid, "Tree ID", t.id, "tree-list-id", "col-id") +
+        cellHtml(tid, "Species", sp, "tree-list-sp", "col-sp") +
+        cellHtml(tid, "DBH", dbh, "tree-list-num", "col-num") +
+        cellHtml(tid, "Height", h, "tree-list-num", "col-num") +
+        cellHtml(tid, "Spread", s, "tree-list-num", "col-num") +
+        cellHtml(tid, "Remarks", rem, "tree-list-remarks", "col-remarks") +
+        '<td class="col-xy tree-list-xy tree-list-xy-x' + (hasXy ? "" : " empty") +
+        '" data-tree-id="' + tid + '" title="Relative x %">' +
+        (hasXy ? escapeHtml(fmtXy(t.x)) : "—") + "</td>" +
+        '<td class="col-xy tree-list-xy tree-list-xy-y' + (hasXy ? "" : " empty") +
+        '" data-tree-id="' + tid + '" title="Relative y %">' +
+        (hasXy ? escapeHtml(fmtXy(t.y)) : "—") + "</td>" +
+        '<td class="col-pin tree-list-pin-cell">' + (t.hasCoords ? '<span class="tree-list-pin" title="有座標">📍</span>' : "") + "</td>" +
+        '<td class="col-del tree-list-del-cell"><button type="button" class="tree-list-del" data-del-id="' + tid +
+        '" title="刪除 Delete" aria-label="刪除 ' + tid + '">✕</button></td>' +
+        "</tr>";
     });
+    html += "</tbody></table>";
     box.innerHTML = html;
     bindTreeListInteractions(box);
     renderAnnotOverlay();
@@ -839,8 +847,6 @@
         const on = String(el.getAttribute("data-tree-id")).toUpperCase() === String(treeId).toUpperCase();
         el.classList.toggle("on", on);
         el.setAttribute("aria-selected", on ? "true" : "false");
-        const main = el.querySelector(".tree-list-main, .tree-list-item");
-        if (main) main.classList.toggle("on", on);
       });
     }
     highlightAnnotMarker(treeId);
@@ -1144,8 +1150,6 @@
       const on = treeId && String(id).toUpperCase() === String(treeId).toUpperCase();
       el.classList.toggle("on", on);
       el.setAttribute("aria-selected", on ? "true" : "false");
-      const main = el.querySelector(".tree-list-main, .tree-list-item");
-      if (main) main.classList.toggle("on", on);
     });
     highlightAnnotMarker(treeId);
   }
@@ -1468,8 +1472,16 @@
     if (box && box.querySelector(".tree-list-field.editing")) {
       Array.prototype.forEach.call(box.querySelectorAll(".tree-list-row"), (row) => {
         if (String(row.getAttribute("data-tree-id") || "").toUpperCase() !== want) return;
-        const xy = row.querySelector(".tree-list-xy");
-        if (xy) xy.textContent = "x " + fmtXy(nx) + "% · y " + fmtXy(ny) + "%";
+        const xCell = row.querySelector(".tree-list-xy-x");
+        const yCell = row.querySelector(".tree-list-xy-y");
+        if (xCell) {
+          xCell.textContent = fmtXy(nx);
+          xCell.classList.remove("empty");
+        }
+        if (yCell) {
+          yCell.textContent = fmtXy(ny);
+          yCell.classList.remove("empty");
+        }
       });
     } else {
       renderTreeList();

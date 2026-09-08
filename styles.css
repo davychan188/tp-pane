@@ -719,13 +719,13 @@ body.media-layout .media-panel {
 body.media-layout {
   /* Wireframe: map | PDF on top; tree list full-width bottom under both */
   grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: 56px minmax(0, 1fr) minmax(132px, 26vh);
+  grid-template-rows: 56px minmax(0, 1fr) minmax(160px, 28vh);
   grid-template-areas:
     "top top top"
     "side map media"
     "side table media";
 }
-/* Excel / annotate trees → horizontal list spans under map + PDF */
+/* Excel / annotate trees → spreadsheet spans under map + PDF */
 body.media-layout.has-tree-list {
   grid-template-areas:
     "top top top"
@@ -1315,7 +1315,7 @@ body.media-layout.show-photos .media-pdf-main {
 @media (max-width: 1180px) {
   body.media-layout {
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto minmax(0, 1fr) minmax(120px, 28vh);
+    grid-template-rows: auto minmax(0, 1fr) minmax(148px, 30vh);
     grid-template-areas:
       "top top"
       "map media"
@@ -1366,7 +1366,7 @@ body.media-layout.show-photos .media-pdf-main {
 
 @media (max-width: 1180px) and (orientation: landscape) {
   body.media-layout {
-    grid-template-rows: auto minmax(0, 1fr) minmax(118px, 26vh);
+    grid-template-rows: auto minmax(0, 1fr) minmax(140px, 28vh);
   }
   .media-frame {
     width: min(52%, 240px);
@@ -1474,156 +1474,116 @@ body.has-tree-list .tree-list-panel,
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
-  overflow-x: auto;
-  overflow-y: hidden;
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: stretch;
-  gap: 8px;
-  padding: 4px 2px 6px;
+  overflow: auto;
+  display: block;
+  padding: 0;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-}
-.tree-list-item,
-.tree-list-main {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: 100%;
-  text-align: left;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
   border-radius: 8px;
-  padding: 8px 10px;
-  cursor: pointer;
-  font: inherit;
-  min-height: 52px;
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
+  background: var(--panel-2);
 }
-body.media-layout .tree-list-row {
-  flex: 0 0 auto;
-  width: min(240px, 72vw);
-  max-width: 280px;
-  scroll-snap-align: start;
+.tree-list-table {
+  width: max(100%, 720px);
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  table-layout: fixed;
 }
-body.media-layout .tree-list-row .tree-list-main,
-body.media-layout .tree-list-row .tree-list-item {
-  height: 100%;
-}
-body.media-layout .tree-list-remarks {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-body.media-layout .map-restore-hint {
-  flex: 0 0 auto;
+.tree-list-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #1a2338;
+  color: #93c5fd;
   font-size: 11px;
-  color: var(--muted);
-  padding: 2px 0 4px;
-}
-.tree-list-item:hover,
-.tree-list-item:active,
-.tree-list-main:hover,
-.tree-list-main:active {
-  border-color: rgba(91, 140, 255, 0.55);
-  background: #243056;
-}
-.tree-list-item.on,
-.tree-list-main.on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
-  background: rgba(91, 140, 255, 0.14);
-}
-.tree-list-line1 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-}
-.tree-list-id {
-  font-size: 13px;
   font-weight: 700;
-  min-width: 2.8em;
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
+  letter-spacing: 0.03em;
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
-.tree-list-sp {
-  flex: 1;
-  min-width: 0;
+.tree-list-table th.col-id,
+.tree-list-table td.col-id {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 72px;
+  min-width: 72px;
+  max-width: 96px;
+}
+.tree-list-table thead th.col-id {
+  z-index: 4;
+  background: #1a2338;
+}
+.tree-list-table td.col-id {
+  background: var(--panel-2);
+  box-shadow: 1px 0 0 var(--line);
+}
+.tree-list-table tr.on td.col-id {
+  background: rgba(91, 140, 255, 0.18);
+}
+.tree-list-table .tree-list-id {
+  font-weight: 700;
+}
+.tree-list-table th.col-sp { width: 160px; min-width: 120px; }
+.tree-list-table th.col-num { width: 64px; min-width: 56px; text-align: right; }
+.tree-list-table th.col-remarks { width: 200px; min-width: 140px; }
+.tree-list-table th.col-xy { width: 56px; min-width: 48px; text-align: right; }
+.tree-list-table th.col-pin { width: 36px; min-width: 32px; text-align: center; }
+.tree-list-table th.col-del { width: 44px; min-width: 40px; }
+.tree-list-table tbody td {
+  padding: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  vertical-align: middle;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--muted);
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
 }
-.tree-list-pin {
-  font-size: 11px;
-  opacity: 0.85;
+.tree-list-row {
+  cursor: pointer;
 }
-.tree-list-metrics {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+.tree-list-row:hover td {
+  background: rgba(91, 140, 255, 0.08);
 }
-.tree-list-metric {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 32px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid transparent;
+.tree-list-row:hover td.col-id {
+  background: #243056;
 }
-.tree-list-metric abbr {
-  font-size: 10px;
-  font-weight: 700;
-  color: #93c5fd;
-  text-decoration: none;
-  letter-spacing: 0.02em;
+.tree-list-row.on td {
+  background: rgba(91, 140, 255, 0.14);
 }
-.tree-list-remarks-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 4px;
-  min-width: 0;
-}
-.tree-list-remarks-row > abbr {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 700;
-  color: #93c5fd;
-  text-decoration: none;
-  margin-top: 6px;
-}
-.tree-list-remarks {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  word-break: break-word;
-  font-size: 12px;
+.tree-list-row.on td.col-id {
+  background: rgba(91, 140, 255, 0.22);
+  box-shadow: inset 3px 0 0 var(--accent), 1px 0 0 var(--line);
 }
 .tree-list-field {
-  min-height: 28px;
+  display: block;
+  min-height: 32px;
   min-width: 28px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 6px 8px;
+  border-radius: 0;
   border: 1px dashed transparent;
   touch-action: manipulation;
   cursor: text;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.tree-list-field.tree-list-num {
+  text-align: right;
+}
+.tree-list-table td.col-num .tree-list-field,
+.tree-list-table th.col-num { text-align: right; }
+.tree-list-table td.col-xy { text-align: right; }
+.tree-list-field.tree-list-remarks {
+  white-space: nowrap;
+}
+.tree-list-field.tree-list-sp {
+  color: var(--muted);
 }
 .tree-list-field.empty {
   color: #64748b;
@@ -1638,18 +1598,79 @@ body.media-layout .map-restore-hint {
   padding: 0;
   border-style: solid;
   border-color: var(--accent);
+  overflow: visible;
 }
 .tree-list-input {
   width: 100%;
-  min-width: 48px;
+  min-width: 40px;
   min-height: 32px;
   font: inherit;
   font-size: 13px;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: 0;
   border: 1px solid var(--accent);
   background: #0b1220;
   color: var(--text);
+  box-sizing: border-box;
+}
+.tree-list-xy {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #93c5fd;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.tree-list-xy.empty {
+  color: #64748b;
+  font-style: italic;
+}
+.tree-list-pin-cell {
+  text-align: center;
+  padding: 4px 2px !important;
+}
+.tree-list-pin {
+  font-size: 11px;
+  opacity: 0.85;
+}
+.tree-list-del-cell {
+  padding: 2px !important;
+  text-align: center;
+}
+.tree-list-del {
+  width: 36px;
+  min-height: 30px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #fca5a5;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  touch-action: manipulation;
+  padding: 0;
+}
+.tree-list-del:hover,
+.tree-list-del:active {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+body.media-layout .map-restore-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0 4px;
 }
 .map-restore-hint {
   margin: 0 0 8px;
@@ -1798,9 +1819,7 @@ body.has-map-ref .status {
     padding-right: 8px;
     font-size: 12px;
   }
-  body.media-layout .tree-list {
-    max-height: none;
-  }
+  /* spreadsheet tree-list scrolls inside panel */
 }
 
 /* ---- From-scratch tree annotate mode ---- */
@@ -2023,47 +2042,6 @@ body.has-map-ref .annot-float-bar {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
-}
-
-.tree-list-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-}
-.tree-list-row.on .tree-list-item,
-.tree-list-row.on .tree-list-main {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35);
-  background: rgba(91, 140, 255, 0.14);
-}
-.tree-list-row .tree-list-item,
-.tree-list-row .tree-list-main {
-  flex: 1;
-  min-width: 0;
-}
-.tree-list-xy {
-  font-size: 11px;
-  color: #93c5fd;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tree-list-del {
-  flex: 0 0 auto;
-  width: 44px;
-  min-height: 52px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: #fca5a5;
-  border-radius: 8px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 16px;
-  touch-action: manipulation;
-}
-.tree-list-del:hover,
-.tree-list-del:active {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.55);
 }
 
 .annot-leaflet-label {
