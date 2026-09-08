@@ -53,17 +53,17 @@
     pdfPage: null,
     pdfTotal: 20,
     relatedPages: [],
-    demoMode: true,
+    demoMode: false,
     objectUrls: [],
     photoZoom: { scale: 1, x: 0, y: 0 },
     pdfZoom: 1
   };
 
   const PHOTO_ZOOM_MIN = 1;
-  const PHOTO_ZOOM_MAX = 4;
+  const PHOTO_ZOOM_MAX = 8;
   const PHOTO_ZOOM_STEP = 0.35;
   const PDF_ZOOM_MIN = 1;
-  const PDF_ZOOM_MAX = 3;
+  const PDF_ZOOM_MAX = 12;
   const PDF_ZOOM_STEP = 0.25;
 
   function $(id) { return document.getElementById(id); }
@@ -169,7 +169,12 @@
     const s = state.pdfZoom;
     if (stage && frame) {
       const baseW = (scroll && scroll.clientWidth) ? scroll.clientWidth : (stage.clientWidth || 280);
-      const baseH = 150;
+      const focused = document.body.classList.contains("pdf-focus");
+      let baseH = 150;
+      if (scroll && !scroll.hidden) {
+        const sh = scroll.clientHeight;
+        if (sh > 40) baseH = focused ? Math.max(220, sh - 8) : Math.max(150, Math.min(sh - 8, 220));
+      }
       frame.style.width = baseW + "px";
       frame.style.height = baseH + "px";
       stage.style.transformOrigin = "0 0";
@@ -182,6 +187,29 @@
     }
     const resetBtn = $("media-pdf-zoom-reset");
     if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
+  }
+
+  function isPdfFocus() {
+    return document.body.classList.contains("pdf-focus");
+  }
+
+  function setPdfFocus(on) {
+    document.body.classList.toggle("pdf-focus", !!on);
+    const closeBtn = $("btn-pdf-focus-close");
+    if (closeBtn) closeBtn.hidden = !on;
+    // Re-measure after layout settles
+    requestAnimationFrame(function () {
+      applyPdfZoom();
+      requestAnimationFrame(applyPdfZoom);
+    });
+  }
+
+  function enterPdfFocus() {
+    setPdfFocus(true);
+  }
+
+  function exitPdfFocus() {
+    setPdfFocus(false);
   }
 
   function resetPdfZoom() {
@@ -254,6 +282,7 @@
       const openTab = $("media-pdf-open-tab");
       if (scroll) scroll.hidden = true;
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
+      exitPdfFocus();
       return;
     }
 
@@ -271,7 +300,7 @@
       pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
     }
     if (pdfTitle) {
-      const pdfName = state.pdfs[0] ? state.pdfs[0].name : "Demo PDF";
+      const pdfName = state.pdfs[0] ? state.pdfs[0].name : "PDF";
       pdfTitle.textContent = "相關 PDF · " + pdfName;
     }
   }
@@ -292,10 +321,12 @@
         openTab.href = pdf.url + "#page=" + n;
         openTab.setAttribute("download", pdf.name || "report.pdf");
       }
+      enterPdfFocus();
       applyPdfZoom();
     } else {
       if (scroll) scroll.hidden = true;
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
+      exitPdfFocus();
     }
     setStatusHint("PDF 跳至第 " + n + " 頁" + (pdf ? "" : "（示範）"));
   }
@@ -562,6 +593,7 @@
     const hint = $("media-tree-hint");
     if (hint) hint.textContent = id ? ("已選 " + id) : "未選樹木";
 
+    exitPdfFocus();
     renderFeatureAttrs(useProps || null, id);
     resetPdfZoom();
     renderPhoto();
@@ -608,6 +640,7 @@
     if (badge) {
       badge.textContent = "本機資料夾";
       badge.classList.remove("demo");
+      badge.hidden = false;
     }
     if (state.treeId) {
       state.photoIndex = 0;
@@ -663,10 +696,11 @@
 
     const badge = $("media-source-badge");
     if (badge) {
-      badge.textContent = "示範 Demo";
+      badge.textContent = "示範";
       badge.classList.add("demo");
+      badge.hidden = false;
     }
-    setStatusHint("示範媒體已載入 — 可改為選擇本機相片／PDF 資料夾");
+    setStatusHint("示範媒體已載入（?demo=1）— 可改為選擇本機相片／PDF 資料夾");
     if (state.treeId) {
       renderPhoto();
       updatePdfForTree(state.treeId);
@@ -855,6 +889,7 @@
       });
     }
 
+    // Optional: deep-link / leftover id only (toolbar demo buttons removed)
     const btnDemo = $("btn-media-demo");
     if (btnDemo) btnDemo.addEventListener("click", () => { loadDemoMedia(); });
 
@@ -866,10 +901,37 @@
         state.pdfs = [];
         state.demoMode = false;
         const badge = $("media-source-badge");
-        if (badge) { badge.textContent = "未載入"; badge.classList.remove("demo"); }
+        if (badge) {
+          badge.textContent = "未載入";
+          badge.classList.remove("demo");
+          badge.hidden = true;
+        }
+        exitPdfFocus();
         setStatusHint("已清除媒體");
         renderPhoto();
         renderPdfChips();
+      });
+    }
+
+    const pdfClose = $("btn-pdf-focus-close");
+    if (pdfClose) pdfClose.addEventListener("click", () => exitPdfFocus());
+
+    const pdfScroll = $("media-pdf-scroll");
+    if (pdfScroll) {
+      pdfScroll.addEventListener("click", (e) => {
+        // Ignore clicks on zoom controls nested elsewhere; scroll area itself expands
+        if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
+        if (!isPdfFocus()) enterPdfFocus();
+      });
+    }
+
+    const pdfHead = $("media-pdf-title");
+    if (pdfHead) {
+      pdfHead.style.cursor = "pointer";
+      pdfHead.title = "點擊展開 PDF 預覽";
+      pdfHead.addEventListener("click", () => {
+        const scroll = $("media-pdf-scroll");
+        if (scroll && !scroll.hidden) enterPdfFocus();
       });
     }
 
@@ -878,10 +940,13 @@
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
       if (e.key === "ArrowLeft") stepPhoto(-1);
       if (e.key === "ArrowRight") stepPhoto(1);
+      if (e.key === "Escape" && isPdfFocus()) exitPdfFocus();
     });
 
-    // Auto demo media so UI works immediately
-    loadDemoMedia();
+    // Do not auto-load demo media in primary UI; use ?demo=1 (app.js) for samples.
+    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」或側欄選擇相片／PDF");
+    renderPhoto();
+    renderPdfChips();
   }
 
   window.GpkgMedia = {

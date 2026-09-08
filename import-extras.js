@@ -888,7 +888,7 @@
 
 
   const MAP_ZOOM_MIN = 1;
-  const MAP_ZOOM_MAX = 4;
+  const MAP_ZOOM_MAX = 8;
   const MAP_ZOOM_STEP = 0.35;
 
   function clampZoom(n, lo, hi) {

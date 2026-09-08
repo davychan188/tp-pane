@@ -1120,6 +1120,55 @@ body.media-layout.table-collapsed .feature-attrs {
   color: #93c5fd;
 }
 
+/* Related PDF focus: enlarge lower PDF area, shrink photo temporarily */
+body.media-layout.pdf-focus .media-viewer {
+  flex: 0 0 72px;
+  min-height: 64px;
+  max-height: 88px;
+}
+body.media-layout.pdf-focus .media-frame {
+  width: min(28%, 120px);
+  height: 90%;
+  min-height: 48px;
+}
+body.media-layout.pdf-focus .media-nav {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+body.media-layout.pdf-focus .media-meta {
+  font-size: 11px;
+  padding: 0 2px;
+}
+body.media-layout.pdf-focus .media-zoom-ctrls {
+  transform: scale(0.85);
+  transform-origin: bottom right;
+}
+body.media-layout.pdf-focus .media-pdfs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.media-layout.pdf-focus .media-pdf-scroll {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 240px;
+  max-height: none;
+}
+body.media-layout.pdf-focus .media-pdf-frame {
+  min-height: 220px;
+}
+body.media-layout.pdf-focus #btn-pdf-focus-close {
+  background: rgba(91, 140, 255, 0.22);
+  border: 1px solid var(--accent);
+  font-weight: 700;
+}
+#btn-pdf-focus-close[hidden] {
+  display: none !important;
+}
+
 #btn-pick-media {
   position: relative;
   overflow: hidden;

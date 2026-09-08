@@ -2740,7 +2740,10 @@
   function setCatalogOpen(open) {
     document.body.classList.toggle("table-collapsed", !open);
     const btn = $("btn-toggle-table");
-    if (btn) btn.textContent = open ? "Close catalog" : "Open catalog";
+    if (btn) {
+      btn.textContent = open ? "收起目錄" : "展開目錄";
+      btn.title = open ? "收起目錄表" : "展開目錄表";
+    }
     const wrap = $("table-wrap");
     if (!open) {
       if (wrap) wrap.innerHTML = "";
@@ -3190,8 +3193,6 @@
   // iPad media layout: start with catalog collapsed so selected-tree attrs dominate
   if (document.body.classList.contains("media-layout")) {
     setCatalogOpen(false);
-    const tog = $("btn-toggle-table");
-    if (tog) tog.textContent = "目錄 Catalog";
   }
 
   // Optional bundled sample: open with ?demo=1 (trees + media, or rivers.gpkg)

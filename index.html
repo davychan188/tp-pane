@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=58" />
-  <link rel="stylesheet" href="styles.css?v=58" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=60" />
+  <link rel="stylesheet" href="styles.css?v=60" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -43,8 +43,6 @@
         媒體資料夾
         <input id="media-file-input" type="file" accept="image/*,.pdf,application/pdf" multiple hidden />
       </label>
-      <button class="btn" id="btn-media-demo" type="button" title="Load demo photos/PDF">示範媒體</button>
-      <button class="btn" id="btn-demo-trees" type="button" title="Place demo trees without GPKG">示範樹木</button>
       <button class="btn" id="btn-fit" type="button">Fit</button>
       <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="Hide photo panel">隱藏相片</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
@@ -141,7 +139,7 @@
         <input id="media-file-input-side" type="file" accept="image/*,.pdf,application/pdf" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <button class="btn full" id="btn-media-clear" type="button">清除媒體</button>
-      <div class="hint" id="media-status">示範媒體已就緒</div>
+      <div class="hint" id="media-status">尚未載入媒體 — 請按「媒體資料夾」或側欄選擇相片／PDF</div>
     </div>
 
     <p class="edit-hint" id="edit-hint">點選樹木以檢視屬性與媒體。需要移動時再開「移動此點」。</p>
@@ -250,12 +248,12 @@
     <div class="feature-attrs" id="feature-attrs">
       <h2 id="feature-attrs-title">樹木資料 Attributes <span class="tag" id="feature-attrs-tag">—</span></h2>
       <div id="feature-attrs-body">
-        <p class="empty-hint">點選地圖／清單上的樹木以顯示屬性（點一下可編輯）。第二列為 DBH／H（高度）／S（冠幅）。可匯入 Excel、地圖 PDF，或按「示範樹木」（無需 GPKG）。</p>
+        <p class="empty-hint">點選地圖／清單上的樹木以顯示屬性（點一下可編輯）。第二列為 DBH／H（高度）／S（冠幅）。可匯入 Excel、地圖 PDF 與媒體資料夾（無需 GPKG）。</p>
       </div>
     </div>
     <div class="table-bar">
-      <button class="btn" id="btn-toggle-table" type="button">目錄 Catalog</button>
-      <strong id="table-title">屬性表 Attributes</strong>
+      <button class="btn" id="btn-toggle-table" type="button" title="展開或收起目錄表">展開目錄</button>
+      <strong id="table-title">屬性表</strong>
       <label class="table-sort">排序 Sort
         <select id="table-sort-col"></select>
       </label>
@@ -273,7 +271,7 @@
   <aside class="media-panel" id="media-panel" aria-label="樹木媒體">
     <div class="media-head">
       <h2>樹木照片 Photos <span class="tag">直放 · 每次一張</span></h2>
-      <span class="media-badge demo" id="media-source-badge">示範 Demo</span>
+      <span class="media-badge" id="media-source-badge" hidden>未載入</span>
       <span class="media-tree-hint" id="media-tree-hint">未選樹木</span>
     </div>
     <div class="media-viewer" id="media-viewer">
@@ -303,12 +301,13 @@
             <button type="button" class="zoom-btn" id="media-pdf-zoom-reset" title="重設" aria-label="重設">1×</button>
             <button type="button" class="zoom-btn" id="media-pdf-zoom-in" title="放大" aria-label="放大">+</button>
           </div>
+          <button class="btn" type="button" id="btn-pdf-focus-close" hidden title="收起 PDF 預覽，恢復相片版面">收起</button>
           <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟 PDF">新分頁開啟</a>
           <div class="media-page-now" id="media-page-now">—</div>
         </div>
       </div>
       <div class="media-nums" id="media-pdf-nums"></div>
-      <div class="media-pdf-scroll" id="media-pdf-scroll" hidden>
+      <div class="media-pdf-scroll" id="media-pdf-scroll" hidden title="點擊展開 PDF 預覽">
         <div class="media-pdf-stage" id="media-pdf-stage">
           <iframe id="media-pdf-frame" class="media-pdf-frame" title="PDF preview"></iframe>
         </div>
@@ -316,11 +315,11 @@
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=58"></script>
-  <script src="vendor/geopackage.min.js?v=58"></script>
-  <script src="vendor/xlsx.full.min.js?v=58"></script>
-  <script src="media.js?v=58"></script>
-  <script src="import-extras.js?v=58"></script>
-  <script src="app.js?v=58"></script>
+  <script src="vendor/leaflet.js?v=60"></script>
+  <script src="vendor/geopackage.min.js?v=60"></script>
+  <script src="vendor/xlsx.full.min.js?v=60"></script>
+  <script src="media.js?v=60"></script>
+  <script src="import-extras.js?v=60"></script>
+  <script src="app.js?v=60"></script>
 </body>
 </html>
