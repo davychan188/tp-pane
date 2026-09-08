@@ -1878,6 +1878,16 @@ body.media-layout .map-restore-hint {
 }
 .map-ref-img {
   object-fit: contain;
+  /* Let #map-annotate-layer own Pencil/pointer hit-testing */
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.map-ref-object,
+.map-ref-embed,
+.map-ref-frame {
+  /* Native PDF plugins steal hits above HTML siblings on iOS — mute when present */
+  pointer-events: none;
 }
 /* When map-ref covers the map area, hide / mute Leaflet so black tiles don't show through */
 body.has-map-ref #map {
@@ -1965,10 +1975,15 @@ body.has-map-ref .status {
   z-index: 5;
   pointer-events: none;
   overflow: visible;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 .map-annotate-layer.active {
   pointer-events: auto;
   cursor: crosshair;
+  /* Critical for Apple Pencil: block Safari pan/Scribble so strokes stay on the layer */
   touch-action: none;
 }
 .map-annotate-layer.active.place-trees {
@@ -2035,11 +2050,13 @@ body.annotate-mode.has-map-ref #map {
 .annot-draw-ink {
   fill: none;
   stroke: #38bdf8;
-  stroke-width: 0.55;
+  /* Match preview (~2.25px screen) — 0.55 + non-scaling-stroke was invisible on iPad */
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.92;
   pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 .annot-ink {
   pointer-events: stroke;

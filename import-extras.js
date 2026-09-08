@@ -1123,17 +1123,25 @@
     const media = getMapRefMediaEl();
     const sw = stage.clientWidth || 0;
     const sh = stage.clientHeight || 0;
-    if (!media || !sw || !sh) {
+    function fillStage() {
       layer.style.left = "0";
       layer.style.top = "0";
       layer.style.width = "100%";
       layer.style.height = "100%";
+    }
+    if (!media || !sw || !sh) {
+      fillStage();
       return;
     }
     // Prefer the img element's layout box inside the stage (not assuming it fills stage),
     // then object-fit:contain letterbox within that box — same space markers/% use.
-    const iw = media.clientWidth || sw;
-    const ih = media.clientHeight || sh;
+    const iw = media.clientWidth || 0;
+    const ih = media.clientHeight || 0;
+    // Media present but not laid out yet → keep full stage hit target (never 0×0)
+    if (!iw || !ih) {
+      fillStage();
+      return;
+    }
     let il = 0;
     let it = 0;
     if (media.offsetParent === stage) {
@@ -1146,6 +1154,10 @@
       it = Math.max(0, Math.round((sh - ih) / 2));
     }
     const box = containBox(iw, ih, media.naturalWidth, media.naturalHeight);
+    if (!box.width || !box.height) {
+      fillStage();
+      return;
+    }
     layer.style.left = (il + box.left).toFixed(2) + "px";
     layer.style.top = (it + box.top).toFixed(2) + "px";
     layer.style.width = box.width.toFixed(2) + "px";
@@ -1312,8 +1324,13 @@
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
     }
 
+    function isStylusTouch(t) {
+      // iPadOS: Apple Pencil also synthesizes touch events (touchType === "stylus")
+      return !!(t && (t.touchType === "stylus" || t.touchType === "pen"));
+    }
+
     viewer.addEventListener("touchstart", (e) => {
-      // Let annotate mode own single-finger taps; still allow pinch zoom
+      // Let annotate layer own Pencil / single-finger draw; still allow pinch zoom
       if (!e.touches) return;
       if (e.touches.length === 2) {
         pinch = {
@@ -1327,9 +1344,14 @@
         return;
       }
       pinch = null;
-      // Pan when zoomed — including annotate mode (letterbox / areas not on the layer)
+      const t = e.touches[0];
+      // Never pan with Apple Pencil — ink draw owns stylus (even when zoomed)
+      if (isStylusTouch(t)) {
+        pan = null;
+        return;
+      }
+      // Finger pan when zoomed — including annotate mode (letterbox / areas not on the layer)
       if (state.mapRefZoom.scale > 1.01 && e.touches.length === 1) {
-        const t = e.touches[0];
         pan = { x0: t.clientX, y0: t.clientY, ox: state.mapRefZoom.x, oy: state.mapRefZoom.y };
       } else {
         pan = null;
@@ -2273,6 +2295,20 @@
       setImportStatus("已畫墨跡（不加樹）· 共 " + state.drawStrokes.length + " 筆", "ok");
     }
 
+    // Claim Apple Pencil touch stream so viewer pinch/pan handlers cannot cancel ink
+    layer.addEventListener("touchstart", (e) => {
+      if (!layer.classList.contains("active")) return;
+      if (!e.touches || !e.touches.length) return;
+      let stylus = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        const tt = e.touches[i].touchType;
+        if (tt === "stylus" || tt === "pen") { stylus = true; break; }
+      }
+      if (!stylus) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false });
+
     layer.addEventListener("pointerdown", (e) => {
       // Ink draw works whenever the layer is active (map-ref). Tree place needs 加樹 mode.
       if (!layer.classList.contains("active")) return;
@@ -2324,6 +2360,7 @@
       // Pen / mouse: freehand draw (primary)
       if (isPenLike) {
         e.preventDefault();
+        e.stopPropagation();
         startDraw(e, pct);
         return;
       }
@@ -2345,7 +2382,7 @@
         oy: 0,
         points: pct ? [pct] : []
       };
-    });
+    }, { passive: false });
 
     layer.addEventListener("pointermove", (e) => {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
@@ -2421,7 +2458,7 @@
       }
       e.preventDefault();
       applyDragVisual(e.clientX, e.clientY);
-    });
+    }, { passive: false });
 
     function finishPointer(e) {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
@@ -2480,10 +2517,15 @@
       }
     }
 
-    layer.addEventListener("pointerup", finishPointer);
+    layer.addEventListener("pointerup", finishPointer, { passive: false });
     layer.addEventListener("pointercancel", (e) => {
       if (!gesture || gesture.pointerId !== e.pointerId) return;
       if (gesture.mode === "draw") {
+        // Safari often cancels Pencil mid-stroke (scroll/Scribble); keep ink if we sampled a path
+        if (gesture.points && gesture.points.length >= 2) {
+          finishDraw(e);
+          return;
+        }
         clearPreview();
         try { layer.releasePointerCapture(e.pointerId); } catch (_) {}
         endGesture();
@@ -2502,7 +2544,7 @@
       }
       endGesture();
       suppressClickUntil = Date.now() + 300;
-    });
+    }, { passive: false });
 
     layer.addEventListener("click", (e) => {
       if (Date.now() < suppressClickUntil) {
