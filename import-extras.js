@@ -267,9 +267,9 @@
     document.body.classList.toggle("hide-media", hide);
     const btn = $("btn-toggle-media");
     if (btn) {
-      btn.textContent = hide ? "顯示相片" : "隱藏相片";
+      btn.textContent = hide ? "顯示媒體" : "隱藏媒體";
       btn.setAttribute("aria-pressed", hide ? "true" : "false");
-      btn.title = hide ? "Show photo panel" : "Hide photo panel";
+      btn.title = hide ? "顯示右側媒體欄" : "隱藏右側媒體欄";
     }
     try { localStorage.setItem(LS_HIDE_MEDIA, hide ? "1" : "0"); } catch (_) {}
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {

@@ -1,5 +1,5 @@
 /**
- * Media panel: portrait photo viewer + PDF chips.
+ * Media panel: PDF page viewer (primary) + optional collapsed photos.
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -47,16 +47,17 @@
 
   const state = {
     photos: [],       // { name, url, treeId, file? }
-    pdfs: [],         // { name, url, file? }
+    pdfs: [],         // { name, url, treeId, file?, pageCount? }
     treeId: null,
     selectedProps: null,
     photoIndex: 0,
-    pdfPage: null,
-    pdfTotal: 20,
-    relatedPages: [],
-    pdfChipMode: "docs", // "docs" = one chip per PDF file; "pages" = demo page chips
+    pdfIndex: 0,      // selected PDF within activePdfs()
+    pdfPage: null,    // 1-based page within selected PDF
+    pdfTotal: 0,
+    relatedPages: [], // page chips for current PDF (may be demo subset)
     filterMode: "all",   // "all" | "tree" — default show all imported media
     demoMode: false,
+    showPhotos: false,   // photos section collapsed by default
     objectUrls: [],
     photoZoom: { scale: 1, x: 0, y: 0 },
     pdfZoom: 1
@@ -164,12 +165,76 @@
   function setFilterMode(mode) {
     state.filterMode = (mode === "tree") ? "tree" : "all";
     state.photoIndex = 0;
+    state.pdfIndex = 0;
     const allBtn = $("media-filter-all");
     const treeBtn = $("media-filter-tree");
     if (allBtn) allBtn.classList.toggle("on", state.filterMode === "all");
     if (treeBtn) treeBtn.classList.toggle("on", state.filterMode === "tree");
     renderPhoto();
     updatePdfLibrary();
+  }
+
+  function pdfsForTree(treeId) {
+    const id = normalizeTreeId(treeId);
+    if (!id) return [];
+    return state.pdfs.filter((p) => p.treeId === id);
+  }
+
+  /** Visible PDF list: default = all imported; optional tree filter by filename prefix. */
+  function activePdfs() {
+    if (state.filterMode === "tree") {
+      if (!state.treeId) return [];
+      const matched = pdfsForTree(state.treeId);
+      // If no PDF name matches tree, still show all PDFs (survey PDF often shared)
+      return matched.length ? matched : state.pdfs.slice();
+    }
+    return state.pdfs;
+  }
+
+  function currentPdf() {
+    const list = activePdfs();
+    if (!list.length) return null;
+    if (state.pdfIndex < 0) state.pdfIndex = 0;
+    if (state.pdfIndex >= list.length) state.pdfIndex = list.length - 1;
+    return list[state.pdfIndex] || null;
+  }
+
+  /** Heuristic page count from PDF bytes (no pdf.js). */
+  function estimatePdfPageCount(bytes) {
+    try {
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      // latin1 keeps 1:1 byte→char for regex scanning
+      let s = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < u8.length; i += chunk) {
+        s += String.fromCharCode.apply(null, u8.subarray(i, Math.min(i + chunk, u8.length)));
+      }
+      const re = /\/Type\s*\/Page(?!\s*s)\b/g;
+      let n = 0;
+      while (re.exec(s)) n += 1;
+      return n > 0 ? n : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  async function ensurePdfPageCount(pdf) {
+    if (!pdf) return 1;
+    if (pdf.pageCount && pdf.pageCount > 0) return pdf.pageCount;
+    try {
+      let buf = null;
+      if (pdf.file && typeof pdf.file.arrayBuffer === "function") {
+        buf = await pdf.file.arrayBuffer();
+      } else if (pdf.url) {
+        const res = await fetch(pdf.url);
+        if (res.ok) buf = await res.arrayBuffer();
+      }
+      if (buf) pdf.pageCount = estimatePdfPageCount(buf);
+    } catch (e) {
+      pdf.pageCount = pdf.pageCount || 1;
+    }
+    if (!pdf.pageCount || pdf.pageCount < 1) pdf.pageCount = 1;
+    return pdf.pageCount;
   }
 
   function setStatusHint(msg) {
@@ -230,17 +295,15 @@
     const s = state.pdfZoom;
     if (stage && frame) {
       const baseW = (scroll && scroll.clientWidth) ? scroll.clientWidth : (stage.clientWidth || 280);
-      const focused = document.body.classList.contains("pdf-focus");
-      let baseH = 150;
+      let baseH = 280;
       if (scroll && !scroll.hidden) {
         const sh = scroll.clientHeight;
-        if (sh > 40) baseH = focused ? Math.max(220, sh - 8) : Math.max(150, Math.min(sh - 8, 220));
+        if (sh > 40) baseH = Math.max(220, sh - 8);
       }
       frame.style.width = baseW + "px";
       frame.style.height = baseH + "px";
       stage.style.transformOrigin = "0 0";
       stage.style.transform = "scale(" + s.toFixed(3) + ")";
-      // Layout box stays base size; margins extend scrollable area to match visual scale
       stage.style.width = baseW + "px";
       stage.style.height = baseH + "px";
       stage.style.marginRight = (baseW * (s - 1)) + "px";
@@ -248,29 +311,6 @@
     }
     const resetBtn = $("media-pdf-zoom-reset");
     if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
-  }
-
-  function isPdfFocus() {
-    return document.body.classList.contains("pdf-focus");
-  }
-
-  function setPdfFocus(on) {
-    document.body.classList.toggle("pdf-focus", !!on);
-    const closeBtn = $("btn-pdf-focus-close");
-    if (closeBtn) closeBtn.hidden = !on;
-    // Re-measure after layout settles
-    requestAnimationFrame(function () {
-      applyPdfZoom();
-      requestAnimationFrame(applyPdfZoom);
-    });
-  }
-
-  function enterPdfFocus() {
-    setPdfFocus(true);
-  }
-
-  function exitPdfFocus() {
-    setPdfFocus(false);
   }
 
   function resetPdfZoom() {
@@ -283,177 +323,225 @@
     applyPdfZoom();
   }
 
-  function renderPhoto() {
-    const list = activePhotos();
-    const slide = $("media-slide");
-    const img = $("media-img");
-    const fname = $("media-fname");
-    const pcnt = $("media-pcnt");
-    const empty = $("media-empty");
-    const viewer = $("media-viewer");
-    resetPhotoZoom();
-
-    if (!list.length) {
-      if (slide) slide.hidden = true;
-      if (img) { img.hidden = true; img.removeAttribute("src"); img.style.transform = ""; }
-      if (empty) {
-        empty.hidden = false;
-        if (!state.photos.length) {
-          empty.textContent = "尚未載入媒體 — 請按「媒體資料夾」選相片／PDF";
-        } else if (state.filterMode === "tree" && state.treeId) {
-          empty.textContent = "沒有符合 " + state.treeId + " 的相片（可改「全部媒體」，或檔名用 " + state.treeId + "_…）";
-        } else if (state.filterMode === "tree" && !state.treeId) {
-          empty.textContent = "「只顯示呢棵樹」模式下請先點選樹木，或改回「全部媒體」";
-        } else {
-          empty.textContent = "沒有可顯示的相片";
-        }
-      }
-      if (fname) fname.textContent = "—";
-      if (pcnt) pcnt.textContent = "0 / 0";
-      return;
+  function setShowPhotos(on) {
+    state.showPhotos = !!on;
+    document.body.classList.toggle("show-photos", state.showPhotos);
+    const body = $("media-photos-body");
+    const btn = $("btn-toggle-photos");
+    if (body) body.hidden = !state.showPhotos;
+    if (btn) {
+      btn.textContent = state.showPhotos ? "隱藏相片" : "顯示相片";
+      btn.setAttribute("aria-pressed", state.showPhotos ? "true" : "false");
     }
-
-    if (state.photoIndex >= list.length) state.photoIndex = 0;
-    if (state.photoIndex < 0) state.photoIndex = list.length - 1;
-    const p = list[state.photoIndex];
-
-    if (empty) empty.hidden = true;
-    if (img && p.url) {
-      img.hidden = false;
-      img.src = p.url;
-      img.alt = p.name;
-      if (slide) slide.hidden = true;
-    } else if (slide) {
-      if (img) img.hidden = true;
-      slide.hidden = false;
-      slide.textContent = p.name;
-      slide.style.background = p.bg || "linear-gradient(135deg,#4a5568,#1a202c)";
+    if (state.showPhotos) {
+      renderPhoto();
+      requestAnimationFrame(function () {
+        applyPdfZoom();
+        requestAnimationFrame(applyPdfZoom);
+      });
+    } else {
+      requestAnimationFrame(function () {
+        applyPdfZoom();
+        requestAnimationFrame(applyPdfZoom);
+      });
     }
-    if (fname) fname.textContent = p.name;
-    if (pcnt) pcnt.textContent = (state.photoIndex + 1) + " / " + list.length;
-    if (viewer) viewer.setAttribute("data-count", String(list.length));
   }
 
-  function renderPdfChips() {
-    const nums = $("media-pdf-nums");
-    const pageNow = $("media-page-now");
-    const pdfTitle = $("media-pdf-title");
-    if (!nums) return;
-    nums.innerHTML = "";
-
-    const pages = state.relatedPages || [];
-    if (!pages.length) {
-      if (pageNow) pageNow.textContent = state.pdfs.length ? "—" : "未匯入 PDF";
-      if (pdfTitle) pdfTitle.textContent = "相關 PDF";
-      const scroll = $("media-pdf-scroll");
-      const openTab = $("media-pdf-open-tab");
-      if (scroll) scroll.hidden = true;
-      if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
-      exitPdfFocus();
+  function renderPdfTabs() {
+    const tabs = $("media-pdf-tabs");
+    if (!tabs) return;
+    const list = activePdfs();
+    tabs.innerHTML = "";
+    if (list.length <= 1) {
+      tabs.hidden = true;
       return;
     }
+    tabs.hidden = false;
+    list.forEach((pdf, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "media-pdf-tab" + (i === state.pdfIndex ? " on" : "");
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", i === state.pdfIndex ? "true" : "false");
+      b.textContent = shortPdfLabel(pdf.name, i);
+      b.title = pdf.name;
+      b.addEventListener("click", () => selectPdfIndex(i));
+      tabs.appendChild(b);
+    });
+  }
 
+  function renderPageChips() {
+    const nums = $("media-pdf-nums");
+    const pageNow = $("media-page-now");
+    if (!nums) return;
+    nums.innerHTML = "";
+    const pages = state.relatedPages || [];
+    if (!pages.length) {
+      if (pageNow) pageNow.textContent = state.pdfs.length ? "現在第 — / — 頁" : "未匯入 PDF";
+      return;
+    }
     pages.forEach((n) => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "media-num" + (n === state.pdfPage ? " on" : "");
-      if (state.pdfChipMode === "docs") {
-        const pdf = state.pdfs[n - 1];
-        b.textContent = pdf ? shortPdfLabel(pdf.name, n - 1) : ("#" + String(n).padStart(2, "0"));
-        b.title = pdf ? pdf.name : ("PDF " + n);
-        b.setAttribute("aria-label", "開啟 PDF " + (pdf ? pdf.name : n));
-      } else {
-        b.textContent = "#" + String(n).padStart(2, "0");
-        b.setAttribute("aria-label", "第 " + n + " 頁");
-      }
+      b.textContent = "#" + String(n).padStart(2, "0");
+      b.setAttribute("aria-label", "第 " + n + " 頁");
+      b.title = "第 " + n + " 頁";
       b.addEventListener("click", () => jumpToPdfPage(n));
       nums.appendChild(b);
     });
-
-    if (state.pdfChipMode === "docs") {
-      const cur = state.pdfs[(state.pdfPage || 1) - 1];
-      if (pageNow) {
-        pageNow.textContent = cur
-          ? ((state.pdfPage || 1) + " / " + state.pdfTotal + " · " + cur.name)
-          : (state.pdfs.length + " 個 PDF");
-      }
-      if (pdfTitle) {
-        pdfTitle.textContent = cur ? ("相關 PDF · " + cur.name) : ("相關 PDF · " + state.pdfs.length + " 個");
-      }
-    } else {
-      if (pageNow) {
-        pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
-      }
-      if (pdfTitle) {
-        const pdfName = state.pdfs[0] ? state.pdfs[0].name : "PDF";
-        pdfTitle.textContent = "相關 PDF · " + pdfName;
-      }
+    if (pageNow) {
+      pageNow.textContent = "現在第 " + (state.pdfPage || pages[0]) + " / " + state.pdfTotal + " 頁";
     }
   }
 
-  function jumpToPdfPage(n) {
-    state.pdfPage = n;
-    renderPdfChips();
+  function renderPdfChips() {
+    // Back-compat alias used by older call sites
+    renderPdfTabs();
+    renderPageChips();
+  }
+
+  function showPdfInFrame(page) {
     const frame = $("media-pdf-frame");
     const scroll = $("media-pdf-scroll");
     const openTab = $("media-pdf-open-tab");
-    let pdf = null;
-    let src = null;
-    if (state.pdfChipMode === "docs") {
-      pdf = state.pdfs[n - 1];
-      if (pdf && pdf.url) src = pdf.url;
-    } else {
-      pdf = state.pdfs[0];
-      if (pdf && pdf.url) src = pdf.url + "#page=" + n;
-    }
-    if (frame && pdf && src) {
-      if (scroll) scroll.hidden = false;
-      frame.src = src;
-      if (openTab) {
-        openTab.hidden = false;
-        openTab.href = src;
-        openTab.setAttribute("download", pdf.name || "report.pdf");
-      }
-      enterPdfFocus();
-      applyPdfZoom();
-    } else {
+    const empty = $("media-pdf-empty");
+    const pdf = currentPdf();
+    const title = $("media-pdf-title");
+
+    if (!pdf || !pdf.url) {
       if (scroll) scroll.hidden = true;
+      if (empty) {
+        empty.hidden = false;
+        if (!state.pdfs.length) empty.textContent = "尚未載入 PDF — 請按「媒體資料夾」選 PDF";
+        else if (state.filterMode === "tree" && !state.treeId) empty.textContent = "「只顯示呢棵樹」模式下請先點選樹木，或改回「全部媒體」";
+        else empty.textContent = "沒有可顯示的 PDF";
+      }
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
-      exitPdfFocus();
+      if (title) title.innerHTML = '調查 PDF <span class="tag">頁面檢視</span>';
+      return;
     }
-    if (state.pdfChipMode === "docs") {
-      setStatusHint(pdf ? ("開啟 PDF：" + pdf.name) : "PDF");
-    } else {
-      setStatusHint("PDF 跳至第 " + n + " 頁" + (pdf ? "" : "（示範）"));
+
+    if (empty) empty.hidden = true;
+    if (scroll) scroll.hidden = false;
+    const pageNum = page || state.pdfPage || 1;
+    const src = pdf.url + "#page=" + pageNum;
+    if (frame) {
+      // Force reload so browser PDF viewer honours page hash
+      frame.src = "about:blank";
+      requestAnimationFrame(function () { frame.src = src; });
     }
+    if (openTab) {
+      openTab.hidden = false;
+      openTab.href = src;
+      openTab.setAttribute("download", pdf.name || "report.pdf");
+    }
+    if (title) {
+      title.innerHTML = "調查 PDF · " + escapeHtml(pdf.name) + ' <span class="tag">頁面檢視</span>';
+    }
+    applyPdfZoom();
+    requestAnimationFrame(function () {
+      applyPdfZoom();
+      requestAnimationFrame(applyPdfZoom);
+    });
   }
 
-  /** Rebuild PDF chips from full imported set (tree optional; demo may use page chips). */
+  function jumpToPdfPage(n) {
+    const pages = state.relatedPages || [];
+    if (!pages.length) return;
+    let page = Number(n);
+    if (!pages.includes(page)) page = pages[0];
+    state.pdfPage = page;
+    renderPageChips();
+    showPdfInFrame(page);
+    const pdf = currentPdf();
+    setStatusHint("PDF 跳至第 " + page + " 頁" + (pdf ? (" · " + pdf.name) : ""));
+  }
+
+  function stepPdfPage(dir) {
+    const pages = state.relatedPages || [];
+    if (!pages.length) return;
+    let idx = pages.indexOf(state.pdfPage);
+    if (idx < 0) idx = 0;
+    idx = (idx + dir + pages.length) % pages.length;
+    jumpToPdfPage(pages[idx]);
+  }
+
+  function selectPdfIndex(i) {
+    const list = activePdfs();
+    if (!list.length) return;
+    state.pdfIndex = Math.max(0, Math.min(i, list.length - 1));
+    state.pdfPage = 1;
+    resetPdfZoom();
+    updatePdfLibrary();
+  }
+
+  /** Rebuild PDF tabs + page chips; load current page into main viewer. */
   function updatePdfLibrary() {
+    const list = activePdfs();
     const id = normalizeTreeId(state.treeId);
+    const pdfTitle = $("media-pdf-title");
+
+    if (!list.length) {
+      state.pdfIndex = 0;
+      state.pdfPage = null;
+      state.pdfTotal = 0;
+      state.relatedPages = [];
+      renderPdfTabs();
+      renderPageChips();
+      showPdfInFrame(null);
+      return;
+    }
+
+    if (state.pdfIndex >= list.length) state.pdfIndex = 0;
+    const pdf = list[state.pdfIndex];
+
     const demo = state.demoMode && id && DEMO_TREE_PAGES[id] && state.filterMode === "tree";
     if (demo) {
       const d = DEMO_TREE_PAGES[id];
-      state.pdfChipMode = "pages";
       state.relatedPages = d.pages.slice();
       state.pdfPage = d.current;
       state.pdfTotal = d.total;
-    } else if (state.pdfs.length) {
-      state.pdfChipMode = "docs";
-      state.relatedPages = state.pdfs.map((_, i) => i + 1);
-      if (!state.pdfPage || state.pdfPage > state.pdfs.length) state.pdfPage = 1;
-      state.pdfTotal = state.pdfs.length;
-    } else {
-      state.pdfChipMode = "docs";
-      state.relatedPages = [];
-      state.pdfPage = null;
-      state.pdfTotal = 0;
+      if (pdf && !pdf.pageCount) pdf.pageCount = d.total;
+      renderPdfTabs();
+      renderPageChips();
+      showPdfInFrame(state.pdfPage);
+      return;
     }
-    renderPdfChips();
+
+    // Resolve page count async, then fill chips 1..N
+    const known = (pdf && pdf.pageCount) ? pdf.pageCount : 0;
+    if (known > 0) {
+      state.pdfTotal = known;
+      state.relatedPages = [];
+      for (let p = 1; p <= known; p++) state.relatedPages.push(p);
+      if (!state.pdfPage || state.pdfPage > known) state.pdfPage = 1;
+      renderPdfTabs();
+      renderPageChips();
+      showPdfInFrame(state.pdfPage);
+    } else {
+      state.pdfTotal = 1;
+      state.relatedPages = [1];
+      state.pdfPage = 1;
+      renderPdfTabs();
+      renderPageChips();
+      showPdfInFrame(1);
+      ensurePdfPageCount(pdf).then(function (n) {
+        if (currentPdf() !== pdf) return;
+        state.pdfTotal = n;
+        state.relatedPages = [];
+        for (let p = 1; p <= n; p++) state.relatedPages.push(p);
+        if (!state.pdfPage || state.pdfPage > n) state.pdfPage = 1;
+        renderPageChips();
+        showPdfInFrame(state.pdfPage);
+      });
+    }
+    if (pdfTitle && pdf) {
+      /* title also set in showPdfInFrame */
+    }
   }
 
   function updatePdfForTree(treeId) {
-    // Keep API: tree change may switch demo page chips when filter=tree
     if (treeId != null) state.treeId = normalizeTreeId(treeId);
     updatePdfLibrary();
   }
@@ -699,7 +787,6 @@
       }
     }
 
-    exitPdfFocus();
     renderFeatureAttrs(useProps || null, id);
     resetPdfZoom();
     renderPhoto();
@@ -747,7 +834,7 @@
         } else if (isPdfFile(file)) {
           const name = displayFileName(file, index, "pdf");
           const url = keepUrl(URL.createObjectURL(file));
-          nextPdfs.push({ name: name, url: url, file: file });
+          nextPdfs.push({ name: name, url: url, treeId: treeIdFromFileName(name), file: file, pageCount: 0 });
           nPdf += 1;
         } else {
           nSkip += 1;
@@ -773,6 +860,7 @@
     state.pdfs = nextPdfs;
     state.demoMode = false;
     state.photoIndex = 0;
+    state.pdfIndex = 0;
     state.pdfPage = 1;
     // Default: show everything just imported (independent of tree selection)
     state.filterMode = "all";
@@ -794,7 +882,6 @@
       badge.classList.remove("demo");
       badge.hidden = false;
     }
-    exitPdfFocus();
     renderPhoto();
     updatePdfLibrary();
   }
@@ -837,7 +924,7 @@
       if (res.ok) {
         const blob = await res.blob();
         const url = rememberUrl(URL.createObjectURL(blob));
-        state.pdfs = [{ name: "tree_survey_demo.pdf", url: url }];
+        state.pdfs = [{ name: "tree_survey_demo.pdf", url: url, treeId: null, pageCount: 20 }];
       }
     } catch (e) { /* ignore */ }
 
@@ -854,6 +941,8 @@
     if (allBtn) allBtn.classList.toggle("on", true);
     if (treeBtn) treeBtn.classList.toggle("on", false);
     state.photoIndex = 0;
+    state.pdfIndex = 0;
+    state.pdfPage = 1;
     if (!state.treeId) {
       // Still seed attrs for demo convenience, but media shows all
       state.treeId = "T1";
@@ -861,7 +950,6 @@
       const hint = $("media-tree-hint");
       if (hint) hint.textContent = "已選 T1";
     }
-    exitPdfFocus();
     renderPhoto();
     updatePdfLibrary();
   }
@@ -1070,53 +1158,51 @@
         state.pdfs = [];
         state.demoMode = false;
         state.photoIndex = 0;
+        state.pdfIndex = 0;
         state.relatedPages = [];
         state.pdfPage = null;
+        state.pdfTotal = 0;
+        setShowPhotos(false);
         const badge = $("media-source-badge");
         if (badge) {
           badge.textContent = "未載入";
           badge.classList.remove("demo");
           badge.hidden = true;
         }
-        exitPdfFocus();
-        setStatusHint("已清除媒體");
+            setStatusHint("已清除媒體");
         renderPhoto();
         updatePdfLibrary();
       });
     }
 
-    const pdfClose = $("btn-pdf-focus-close");
-    if (pdfClose) pdfClose.addEventListener("click", () => exitPdfFocus());
+    const pdfPrev = $("media-pdf-prev");
+    const pdfNext = $("media-pdf-next");
+    if (pdfPrev) pdfPrev.addEventListener("click", () => stepPdfPage(-1));
+    if (pdfNext) pdfNext.addEventListener("click", () => stepPdfPage(1));
 
-    const pdfScroll = $("media-pdf-scroll");
-    if (pdfScroll) {
-      pdfScroll.addEventListener("click", (e) => {
-        // Ignore clicks on zoom controls nested elsewhere; scroll area itself expands
-        if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
-        if (!isPdfFocus()) enterPdfFocus();
-      });
-    }
+    const btnPhotos = $("btn-toggle-photos");
+    if (btnPhotos) btnPhotos.addEventListener("click", () => setShowPhotos(!state.showPhotos));
+    setShowPhotos(false);
 
-    const pdfHead = $("media-pdf-title");
-    if (pdfHead) {
-      pdfHead.style.cursor = "pointer";
-      pdfHead.title = "點擊展開 PDF 預覽";
-      pdfHead.addEventListener("click", () => {
-        const scroll = $("media-pdf-scroll");
-        if (scroll && !scroll.hidden) enterPdfFocus();
-      });
-    }
-
-    // Keyboard
+    // Keyboard: PDF pages primary; photos only when photo section open
     document.addEventListener("keydown", (e) => {
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
-      if (e.key === "ArrowLeft") stepPhoto(-1);
-      if (e.key === "ArrowRight") stepPhoto(1);
-      if (e.key === "Escape" && isPdfFocus()) exitPdfFocus();
+      if (e.key === "ArrowLeft") {
+        if (state.showPhotos) stepPhoto(-1);
+        else stepPdfPage(-1);
+      }
+      if (e.key === "ArrowRight") {
+        if (state.showPhotos) stepPhoto(1);
+        else stepPdfPage(1);
+      }
+    });
+
+    window.addEventListener("resize", function () {
+      requestAnimationFrame(applyPdfZoom);
     });
 
     // Do not auto-load demo media in primary UI; use ?demo=1 (app.js) for samples.
-    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」選相片／PDF（可唔對應地圖／清單）");
+    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」選 PDF／相片（右側以 PDF 頁面為主；可唔對應地圖／清單）");
     setFilterMode("all");
     renderPhoto();
     updatePdfLibrary();
@@ -1128,6 +1214,7 @@
     loadDemoMedia: loadDemoMedia,
     normalizeTreeId: normalizeTreeId,
     setFilterMode: setFilterMode,
+    setShowPhotos: setShowPhotos,
     demoAttrs: DEMO_ATTRS,
     getState: function () { return state; }
   };

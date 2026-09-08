@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=61" />
-  <link rel="stylesheet" href="styles.css?v=61" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=62" />
+  <link rel="stylesheet" href="styles.css?v=62" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -22,7 +22,7 @@
       <div class="logo" aria-hidden="true"></div>
       <div>
         tp-pane <span class="ver">樹木媒體</span>
-        <small>地圖＋相片／PDF · 檔案只留本機</small>
+        <small>地圖＋PDF 頁面／可選相片 · 檔案只留本機</small>
       </div>
     </div>
     <div class="spacer"></div>
@@ -44,7 +44,7 @@
         <input id="media-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple />
       </label>
       <button class="btn" id="btn-fit" type="button">Fit</button>
-      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="Hide photo panel">隱藏相片</button>
+      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示右側媒體欄">隱藏媒體</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
       <button class="btn" id="btn-export-xlsx" type="button">匯出目錄</button>
       <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
@@ -139,7 +139,7 @@
         <input id="media-file-input-side" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <button class="btn full" id="btn-media-clear" type="button">清除媒體</button>
-      <div class="hint" id="media-status">尚未載入媒體 — 請按「媒體資料夾」或側欄選擇相片／PDF</div>
+      <div class="hint" id="media-status">尚未載入媒體 — 請按「媒體資料夾」或側欄選擇 PDF／相片（右側以 PDF 為主）</div>
     </div>
 
     <p class="edit-hint" id="edit-hint">點選樹木以檢視屬性與媒體。需要移動時再開「移動此點」。</p>
@@ -270,7 +270,7 @@
 
   <aside class="media-panel" id="media-panel" aria-label="樹木媒體">
     <div class="media-head">
-      <h2>樹木照片 Photos <span class="tag">直放 · 每次一張</span></h2>
+      <h2 id="media-pdf-title">調查 PDF <span class="tag">頁面檢視</span></h2>
       <span class="media-badge" id="media-source-badge" hidden>未載入</span>
       <div class="media-filter-toggle" role="group" aria-label="媒體顯示模式">
         <button type="button" class="media-filter-btn on" id="media-filter-all" title="顯示全部已匯入媒體">全部媒體</button>
@@ -278,52 +278,63 @@
       </div>
       <span class="media-tree-hint" id="media-tree-hint">未選樹木</span>
     </div>
-    <div class="media-viewer" id="media-viewer">
-      <button class="media-nav prev" type="button" id="media-prev" aria-label="上一張">‹</button>
-      <div class="media-frame" id="media-frame">
-        <img id="media-img" alt="" hidden />
-        <div class="media-slide" id="media-slide" hidden>相片</div>
-        <div class="media-empty" id="media-empty">尚未載入媒體 — 請按「媒體資料夾」選相片／PDF</div>
-      </div>
-      <button class="media-nav next" type="button" id="media-next" aria-label="下一張">›</button>
-      <div class="zoom-ctrls media-zoom-ctrls" role="group" aria-label="相片縮放">
-        <button type="button" class="zoom-btn" id="media-zoom-out" title="縮小" aria-label="縮小">−</button>
-        <button type="button" class="zoom-btn" id="media-zoom-reset" title="重設" aria-label="重設">1×</button>
-        <button type="button" class="zoom-btn" id="media-zoom-in" title="放大" aria-label="放大">+</button>
-      </div>
-    </div>
-    <div class="media-meta">
-      <span id="media-fname">—</span>
-      <strong id="media-pcnt">0 / 0</strong>
-    </div>
-    <div class="media-pdfs">
-      <div class="media-pdf-head">
-        <h2 id="media-pdf-title" style="margin:0">相關 PDF</h2>
-        <div class="media-pdf-head-right">
-          <div class="zoom-ctrls media-pdf-zoom-ctrls" role="group" aria-label="PDF 縮放">
-            <button type="button" class="zoom-btn" id="media-pdf-zoom-out" title="縮小" aria-label="縮小">−</button>
-            <button type="button" class="zoom-btn" id="media-pdf-zoom-reset" title="重設" aria-label="重設">1×</button>
-            <button type="button" class="zoom-btn" id="media-pdf-zoom-in" title="放大" aria-label="放大">+</button>
-          </div>
-          <button class="btn" type="button" id="btn-pdf-focus-close" hidden title="收起 PDF 預覽，恢復相片版面">收起</button>
-          <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟 PDF">新分頁開啟</a>
-          <div class="media-page-now" id="media-page-now">—</div>
+
+    <div class="media-pdf-tabs" id="media-pdf-tabs" role="tablist" aria-label="選擇 PDF" hidden></div>
+
+    <div class="media-pdf-main" id="media-pdf-main">
+      <div class="media-pdf-scroll" id="media-pdf-scroll" hidden>
+        <div class="media-pdf-stage" id="media-pdf-stage">
+          <iframe id="media-pdf-frame" class="media-pdf-frame" title="PDF page viewer"></iframe>
         </div>
       </div>
-      <div class="media-nums" id="media-pdf-nums"></div>
-      <div class="media-pdf-scroll" id="media-pdf-scroll" hidden title="點擊展開 PDF 預覽">
-        <div class="media-pdf-stage" id="media-pdf-stage">
-          <iframe id="media-pdf-frame" class="media-pdf-frame" title="PDF preview"></iframe>
+      <div class="media-pdf-empty" id="media-pdf-empty">尚未載入 PDF — 請按「媒體資料夾」選 PDF</div>
+      <div class="zoom-ctrls media-pdf-zoom-ctrls" role="group" aria-label="PDF 縮放">
+        <button type="button" class="zoom-btn" id="media-pdf-zoom-out" title="縮小" aria-label="縮小">−</button>
+        <button type="button" class="zoom-btn" id="media-pdf-zoom-reset" title="重設" aria-label="重設">1×</button>
+        <button type="button" class="zoom-btn" id="media-pdf-zoom-in" title="放大" aria-label="放大">+</button>
+      </div>
+    </div>
+
+    <div class="media-pdf-controls" id="media-pdf-controls">
+      <div class="media-pdf-nav-row">
+        <button class="btn media-pdf-step" type="button" id="media-pdf-prev" title="上一頁" aria-label="上一頁">‹ 上頁</button>
+        <div class="media-page-now" id="media-page-now">現在第 — / — 頁</div>
+        <button class="btn media-pdf-step" type="button" id="media-pdf-next" title="下一頁" aria-label="下一頁">下頁 ›</button>
+        <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟 PDF">新分頁開啟</a>
+      </div>
+      <div class="media-nums" id="media-pdf-nums" aria-label="頁碼"></div>
+    </div>
+
+    <div class="media-photos-section" id="media-photos-section">
+      <button class="btn media-photos-toggle" type="button" id="btn-toggle-photos" aria-pressed="false" title="顯示或隱藏相片（預設隱藏）">顯示相片</button>
+      <div class="media-photos-body" id="media-photos-body" hidden>
+        <div class="media-viewer" id="media-viewer">
+          <button class="media-nav prev" type="button" id="media-prev" aria-label="上一張">‹</button>
+          <div class="media-frame" id="media-frame">
+            <img id="media-img" alt="" hidden />
+            <div class="media-slide" id="media-slide" hidden>相片</div>
+            <div class="media-empty" id="media-empty">尚未載入相片</div>
+          </div>
+          <button class="media-nav next" type="button" id="media-next" aria-label="下一張">›</button>
+          <div class="zoom-ctrls media-zoom-ctrls" role="group" aria-label="相片縮放">
+            <button type="button" class="zoom-btn" id="media-zoom-out" title="縮小" aria-label="縮小">−</button>
+            <button type="button" class="zoom-btn" id="media-zoom-reset" title="重設" aria-label="重設">1×</button>
+            <button type="button" class="zoom-btn" id="media-zoom-in" title="放大" aria-label="放大">+</button>
+          </div>
+        </div>
+        <div class="media-meta">
+          <span id="media-fname">—</span>
+          <strong id="media-pcnt">0 / 0</strong>
         </div>
       </div>
     </div>
   </aside>
 
-  <script src="vendor/leaflet.js?v=61"></script>
-  <script src="vendor/geopackage.min.js?v=61"></script>
-  <script src="vendor/xlsx.full.min.js?v=61"></script>
-  <script src="media.js?v=61"></script>
-  <script src="import-extras.js?v=61"></script>
-  <script src="app.js?v=61"></script>
+  <script src="vendor/leaflet.js?v=62"></script>
+  <script src="vendor/geopackage.min.js?v=62"></script>
+  <script src="vendor/xlsx.full.min.js?v=62"></script>
+  <script src="media.js?v=62"></script>
+  <script src="import-extras.js?v=62"></script>
+  <script src="app.js?v=62"></script>
 </body>
 </html>
