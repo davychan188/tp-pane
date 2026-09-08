@@ -1,4 +1,4 @@
-const CACHE = "gpkg-viewer-media-v62";
+const CACHE = "gpkg-viewer-media-v63";
 const ASSETS = [
   "./index.html",
   "./styles.css",
@@ -6,6 +6,8 @@ const ASSETS = [
   "./media.js",
   "./import-extras.js",
   "./vendor/xlsx.full.min.js",
+  "./vendor/pdf.min.js",
+  "./vendor/pdf.worker.min.js",
   "./manifest.json",
   "./vendor/leaflet.css",
   "./vendor/leaflet.js",

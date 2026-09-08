@@ -1142,18 +1142,22 @@ body.media-layout.table-collapsed .feature-attrs {
   display: none !important;
 }
 .media-pdf-stage {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  min-width: 100%;
+  transform: none !important;
   transform-origin: 0 0;
-  will-change: transform;
+}
+.media-pdf-canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
 }
 .media-pdf-frame {
-  width: 100%;
-  height: 100%;
-  min-height: 280px;
-  border: 0;
-  background: #0a0f1c;
-  display: block;
+  display: none !important;
 }
 
 .media-pdf-controls {
@@ -1232,6 +1236,11 @@ body.media-layout.table-collapsed .feature-attrs {
 }
 
 /* Photos demoted: collapsed by default */
+/* Photo strip removed from right panel — keep rules inert */
+.media-photos-section,
+#media-photos-section {
+  display: none !important;
+}
 .media-photos-section {
   flex: 0 0 auto;
   border-top: 1px solid var(--line);
@@ -1255,6 +1264,10 @@ body.media-layout.table-collapsed .feature-attrs {
   flex: 1 1 auto;
   min-height: 140px;
   max-height: 36vh;
+}
+body.media-layout .media-pdf-main {
+  flex: 1 1 auto;
+  min-height: 260px;
 }
 body.media-layout.show-photos .media-pdf-main {
   flex: 1 1 55%;
@@ -1464,6 +1477,28 @@ body:not(.media-layout) .feature-attrs { display: none; }
   color: #93c5fd;
   text-decoration: none;
   letter-spacing: 0.02em;
+}
+.tree-list-remarks-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.tree-list-remarks-row > abbr {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #93c5fd;
+  text-decoration: none;
+  margin-top: 6px;
+}
+.tree-list-remarks {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+  font-size: 12px;
 }
 .tree-list-field {
   min-height: 28px;

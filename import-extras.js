@@ -1,6 +1,8 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * Works without a GeoPackage. Hooks into window.GpkgViewer (set by app.js).
+ * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
+ * map PDF import is separate — neither blocks the other.
+ * Hooks into window.GpkgViewer (set by app.js).
  */
 (function () {
   "use strict";
@@ -23,9 +25,10 @@
 
   const SPECIES_HINTS = ["species", "scientific", "學名", "树种", "樹種", "chinese name", "中文名"];
   const DBH_HINTS = ["dbh", "diameter", "胸徑", "胸径"];
-  const HEIGHT_HINTS = ["overall height (m)", "overall height", "height_m", "height", "高度"];
-  const SPREAD_HINTS = ["crown spread (m)", "crown spread", "spread_m", "spread", "crown", "冠幅"];
-  const DEFECT_HINTS = ["defect", "缺陷", "condition", "remarks", "備註", "备注"];
+  const HEIGHT_HINTS = ["overall height (m)", "overall height", "height_m", "height", "高度", "h"];
+  const SPREAD_HINTS = ["crown spread (m)", "crown spread", "spread_m", "spread", "crown", "冠幅", "s"];
+  const DEFECT_HINTS = ["defect", "缺陷", "condition"];
+  const REMARKS_HINTS = ["remarks", "備註", "备注", "remark", "note", "notes", "註解", "附註"];
   const LOCATION_HINTS = ["location", "位置", "site", "address", "地點", "地点"];
   const LAT_HINTS = ["lat", "latitude", "緯度", "纬度", "y_wgs", "wgs_y", "wgs84_y"];
   const LON_HINTS = ["lon", "lng", "long", "longitude", "經度", "经度", "x_wgs", "wgs_x", "wgs84_x"];
@@ -123,6 +126,7 @@
             DBH: t.props.DBH || "",
             Height: t.props.Height || "",
             Spread: t.props.Spread || "",
+            Remarks: t.props.Remarks || "",
             Defect: t.props.Defect || "",
             Location: t.props.Location || "",
             Latitude: t.props.Latitude,
@@ -678,6 +682,7 @@
     const dbhCol = findCol(headers, DBH_HINTS);
     const heightCol = findCol(headers, HEIGHT_HINTS);
     const spreadCol = findCol(headers, SPREAD_HINTS);
+    const remarksCol = findCol(headers, REMARKS_HINTS);
     const defectCol = findCol(headers, DEFECT_HINTS);
     const locCol = findCol(headers, LOCATION_HINTS);
     const latCol = findCol(headers, LAT_HINTS);
@@ -706,12 +711,15 @@
       renameNice(props, dbhCol, "DBH");
       renameNice(props, heightCol, "Height");
       renameNice(props, spreadCol, "Spread");
+      renameNice(props, remarksCol, "Remarks");
       renameNice(props, defectCol, "Defect");
       renameNice(props, locCol, "Location");
-      // Ensure metrics exist for attrs card (empty editable)
+      // Ensure metrics / remarks exist for attrs card (empty editable)
+      if (!Object.prototype.hasOwnProperty.call(props, "Species")) props.Species = "";
       if (!Object.prototype.hasOwnProperty.call(props, "DBH")) props.DBH = "";
       if (!Object.prototype.hasOwnProperty.call(props, "Height")) props.Height = "";
       if (!Object.prototype.hasOwnProperty.call(props, "Spread")) props.Spread = "";
+      if (!Object.prototype.hasOwnProperty.call(props, "Remarks")) props.Remarks = "";
 
       const coord = pickCoord(row, headers, latCol, lonCol, xCol, yCol);
       let geometry = null;
@@ -774,6 +782,7 @@
       const dbh = p.DBH;
       const h = p.Height;
       const s = p.Spread;
+      const rem = p.Remarks != null ? p.Remarks : (p["備註"] != null ? p["備註"] : "");
       const on = selected && String(selected).toUpperCase() === String(t.id).toUpperCase();
       const tid = escapeHtml(t.id);
       const xy = (t.x != null && t.y != null)
@@ -800,6 +809,12 @@
         '<span class="tree-list-metric"><abbr title="冠幅 Spread">S</abbr>' +
         '<span class="tree-list-field' + ((s == null || s === "") ? " empty" : "") +
         '" data-field="Spread" data-tree-id="' + tid + '">' + escapeHtml(displayListVal(s)) + "</span></span>" +
+        "</div>" +
+        '<div class="tree-list-remarks-row">' +
+        '<abbr title="備註 Remarks">備註</abbr>' +
+        '<span class="tree-list-field tree-list-remarks' + ((rem == null || rem === "") ? " empty" : "") +
+        '" data-field="Remarks" data-tree-id="' + tid +
+        '" title="點一下編輯備註">' + escapeHtml(displayListVal(rem)) + "</span>" +
         "</div></div>" +
         '<button type="button" class="tree-list-del" data-del-id="' + tid +
         '" title="刪除 Delete" aria-label="刪除 ' + tid + '">✕</button>' +
@@ -1256,6 +1271,7 @@
       DBH: "",
       Height: "",
       Spread: "",
+      Remarks: "",
       Defect: "",
       Location: "",
       x: x != null ? Number(x.toFixed(2)) : "",
@@ -1485,7 +1501,7 @@
       const s = String(v).replace(/"/g, '""');
       return /[",\n\r]/.test(s) ? ('"' + s + '"') : s;
     }
-    const lines = ["Tree ID,Species,DBH,Height,Spread,Defect,Location,x,y,Latitude,Longitude,Source"];
+    const lines = ["Tree ID,Species,DBH,Height,Spread,Remarks,Defect,Location,x,y,Latitude,Longitude,Source"];
     state.trees.forEach((t) => {
       const p = t.props || {};
       const id = String(t.id);
@@ -1496,7 +1512,7 @@
       const src = t.source || (t.annot ? "annotate" : "import");
       lines.push([
         csvCell(id), csvCell(p.Species), csvCell(p.DBH), csvCell(p.Height), csvCell(p.Spread),
-        csvCell(p.Defect), csvCell(p.Location), x, y, lat, lng, csvCell(src)
+        csvCell(p.Remarks), csvCell(p.Defect), csvCell(p.Location), x, y, lat, lng, csvCell(src)
       ].join(","));
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });

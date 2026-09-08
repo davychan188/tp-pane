@@ -1,8 +1,9 @@
 /**
- * Media panel: PDF page viewer (primary) + optional collapsed photos.
+ * Media panel: PDF page viewer via pdf.js canvas (sharp zoom).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
+ * Right panel shows PDF pages only (photo strip removed).
  */
 (function () {
   "use strict";
@@ -15,10 +16,10 @@
   };
 
   const DEMO_ATTRS = {
-    T1: { Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Height: "12", Spread: "10", Defect: "_Cavity on trunk", Location: "Demo plot A" },
-    T2: { Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Height: "9", Spread: "7", Defect: "None", Location: "Demo plot A" },
-    T8: { Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Height: "8", Spread: "6", Defect: "Dead wood", Location: "Demo plot B" },
-    T30: { Species: "台灣相思 Acacia confusa", DBH: "55 cm", Height: "14", Spread: "12", Defect: "Root plate lift", Location: "Demo plot C" }
+    T1: { Species: "細葉榕 Ficus microcarpa", DBH: "45 cm", Height: "12", Spread: "10", Remarks: "", Defect: "_Cavity on trunk", Location: "Demo plot A" },
+    T2: { Species: "樟樹 Cinnamomum camphora", DBH: "32 cm", Height: "9", Spread: "7", Remarks: "", Defect: "None", Location: "Demo plot A" },
+    T8: { Species: "洋紫荊 Bauhinia blakeana", DBH: "28 cm", Height: "8", Spread: "6", Remarks: "", Defect: "Dead wood", Location: "Demo plot B" },
+    T30: { Species: "台灣相思 Acacia confusa", DBH: "55 cm", Height: "14", Spread: "12", Remarks: "", Defect: "Root plate lift", Location: "Demo plot C" }
   };
 
   const METRIC_DEFS = [
@@ -43,7 +44,8 @@
   ];
 
   const PRIMARY_KEYS = ["Tree ID", "TreeID", "tree_id", "tree_no", "TREE_ID", "ID", "id"];
-  const PREFERRED_OTHER = ["Species", "Defect", "Location"];
+  const PREFERRED_OTHER = ["Species", "Remarks", "Defect", "Location"];
+  const REMARKS_ALIASES = ["Remarks", "remarks", "備註", "备注", "Remark", "note", "notes", "註解", "附註"];
 
   const state = {
     photos: [],       // { name, url, treeId, file? }
@@ -57,10 +59,14 @@
     relatedPages: [], // page chips for current PDF (may be demo subset)
     filterMode: "all",   // "all" | "tree" — default show all imported media
     demoMode: false,
-    showPhotos: false,   // photos section collapsed by default
+    showPhotos: false,   // photo strip removed from UI
     objectUrls: [],
     photoZoom: { scale: 1, x: 0, y: 0 },
-    pdfZoom: 1
+    pdfZoom: 1,
+    pdfDocCache: new Map(), // url/name -> Promise<PDFDocumentProxy>
+    pdfRenderToken: 0,
+    pdfRenderTimer: null,
+    pdfjsReady: false
   };
 
   const PHOTO_ZOOM_MIN = 1;
@@ -199,11 +205,10 @@
     return list[state.pdfIndex] || null;
   }
 
-  /** Heuristic page count from PDF bytes (no pdf.js). */
+  /** Heuristic page count from PDF bytes (fallback if pdf.js unavailable). */
   function estimatePdfPageCount(bytes) {
     try {
       const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-      // latin1 keeps 1:1 byte→char for regex scanning
       let s = "";
       const chunk = 0x8000;
       for (let i = 0; i < u8.length; i += chunk) {
@@ -218,9 +223,102 @@
     }
   }
 
+  function getPdfjs() {
+    return (typeof window !== "undefined" && window.pdfjsLib) ? window.pdfjsLib : null;
+  }
+
+  function ensurePdfjsConfigured() {
+    const lib = getPdfjs();
+    if (!lib || state.pdfjsReady) return lib;
+    try {
+      const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
+      const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=63";
+      state.pdfjsReady = true;
+    } catch (e) {
+      console.warn("pdf.js worker config failed", e);
+    }
+    return lib;
+  }
+
+  function pdfCacheKey(pdf) {
+    if (!pdf) return "";
+    return pdf.url || pdf.name || "pdf";
+  }
+
+  function forgetPdfDoc(pdf) {
+    if (!pdf) return;
+    const key = pdfCacheKey(pdf);
+    const cached = state.pdfDocCache.get(key);
+    state.pdfDocCache.delete(key);
+    if (pdf._pdfDoc) {
+      try { pdf._pdfDoc.destroy(); } catch (e) { /* ignore */ }
+      pdf._pdfDoc = null;
+    } else if (cached && typeof cached.then === "function") {
+      cached.then(function (doc) {
+        try { if (doc && doc.destroy) doc.destroy(); } catch (e) { /* ignore */ }
+      }).catch(function () {});
+    }
+  }
+
+  function forgetAllPdfDocs() {
+    state.pdfs.forEach(forgetPdfDoc);
+    state.pdfDocCache.clear();
+  }
+
+  async function getPdfDocument(pdf) {
+    if (!pdf) return null;
+    if (pdf._pdfDoc) return pdf._pdfDoc;
+    const lib = ensurePdfjsConfigured();
+    if (!lib) return null;
+    const key = pdfCacheKey(pdf);
+    if (state.pdfDocCache.has(key)) {
+      try {
+        pdf._pdfDoc = await state.pdfDocCache.get(key);
+        if (pdf._pdfDoc && pdf._pdfDoc.numPages) pdf.pageCount = pdf._pdfDoc.numPages;
+        return pdf._pdfDoc;
+      } catch (e) {
+        state.pdfDocCache.delete(key);
+      }
+    }
+    const loading = (async function () {
+      let data = null;
+      if (pdf.file && typeof pdf.file.arrayBuffer === "function") {
+        data = new Uint8Array(await pdf.file.arrayBuffer());
+      } else if (pdf.url) {
+        const res = await fetch(pdf.url);
+        if (!res.ok) throw new Error("無法讀取 PDF");
+        data = new Uint8Array(await res.arrayBuffer());
+      } else {
+        throw new Error("沒有 PDF 資料");
+      }
+      const task = lib.getDocument({ data: data });
+      return await task.promise;
+    })();
+    state.pdfDocCache.set(key, loading);
+    try {
+      const doc = await loading;
+      pdf._pdfDoc = doc;
+      if (doc && doc.numPages) pdf.pageCount = doc.numPages;
+      return doc;
+    } catch (e) {
+      state.pdfDocCache.delete(key);
+      throw e;
+    }
+  }
+
   async function ensurePdfPageCount(pdf) {
     if (!pdf) return 1;
     if (pdf.pageCount && pdf.pageCount > 0) return pdf.pageCount;
+    try {
+      const doc = await getPdfDocument(pdf);
+      if (doc && doc.numPages) {
+        pdf.pageCount = doc.numPages;
+        return pdf.pageCount;
+      }
+    } catch (e) {
+      /* fall through to heuristic */
+    }
     try {
       let buf = null;
       if (pdf.file && typeof pdf.file.arrayBuffer === "function") {
@@ -288,29 +386,95 @@
     setPhotoZoom(state.photoZoom.scale + dir * PHOTO_ZOOM_STEP);
   }
 
-  function applyPdfZoom() {
-    const stage = $("media-pdf-stage");
-    const scroll = $("media-pdf-scroll");
-    const frame = $("media-pdf-frame");
-    const s = state.pdfZoom;
-    if (stage && frame) {
-      const baseW = (scroll && scroll.clientWidth) ? scroll.clientWidth : (stage.clientWidth || 280);
-      let baseH = 280;
-      if (scroll && !scroll.hidden) {
-        const sh = scroll.clientHeight;
-        if (sh > 40) baseH = Math.max(220, sh - 8);
-      }
-      frame.style.width = baseW + "px";
-      frame.style.height = baseH + "px";
-      stage.style.transformOrigin = "0 0";
-      stage.style.transform = "scale(" + s.toFixed(3) + ")";
-      stage.style.width = baseW + "px";
-      stage.style.height = baseH + "px";
-      stage.style.marginRight = (baseW * (s - 1)) + "px";
-      stage.style.marginBottom = (baseH * (s - 1)) + "px";
-    }
+  function updatePdfZoomLabel() {
     const resetBtn = $("media-pdf-zoom-reset");
+    const s = state.pdfZoom;
     if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
+  }
+
+  async function renderPdfCanvas() {
+    const canvas = $("media-pdf-canvas");
+    const scroll = $("media-pdf-scroll");
+    const stage = $("media-pdf-stage");
+    const empty = $("media-pdf-empty");
+    const pdf = currentPdf();
+    if (!canvas) return;
+    if (!pdf || !pdf.url) return;
+
+    const token = ++state.pdfRenderToken;
+    const pageNum = state.pdfPage || 1;
+    const lib = ensurePdfjsConfigured();
+    if (!lib) {
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = "缺少 pdf.js — 無法以高清晰度顯示 PDF";
+      }
+      return;
+    }
+
+    try {
+      const doc = await getPdfDocument(pdf);
+      if (token !== state.pdfRenderToken) return;
+      if (!doc) throw new Error("無法載入 PDF");
+      if (doc.numPages && (!pdf.pageCount || pdf.pageCount !== doc.numPages)) {
+        pdf.pageCount = doc.numPages;
+      }
+      const page = await doc.getPage(pageNum);
+      if (token !== state.pdfRenderToken) return;
+
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+      const baseW = (scroll && scroll.clientWidth) ? Math.max(120, scroll.clientWidth - 4) : 280;
+      const unscaled = page.getViewport({ scale: 1 });
+      const fitScale = baseW / unscaled.width;
+      const displayScale = fitScale * state.pdfZoom;
+      const viewport = page.getViewport({ scale: displayScale * dpr });
+
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const cssW = Math.max(1, Math.floor(viewport.width / dpr));
+      const cssH = Math.max(1, Math.floor(viewport.height / dpr));
+      canvas.style.width = cssW + "px";
+      canvas.style.height = cssH + "px";
+
+      if (stage) {
+        stage.style.transform = "none";
+        stage.style.transformOrigin = "0 0";
+        stage.style.width = cssW + "px";
+        stage.style.height = cssH + "px";
+        stage.style.marginRight = "0";
+        stage.style.marginBottom = "0";
+      }
+
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (!ctx) throw new Error("canvas 2d unavailable");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const task = page.render({ canvasContext: ctx, viewport: viewport });
+      await task.promise;
+      if (token !== state.pdfRenderToken) return;
+      if (empty) empty.hidden = true;
+    } catch (err) {
+      if (token !== state.pdfRenderToken) return;
+      console.warn("pdf canvas render failed", err);
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = "PDF 繪製失敗：" + (err && err.message ? err.message : String(err));
+      }
+    }
+  }
+
+  function applyPdfZoom() {
+    updatePdfZoomLabel();
+    if (state.pdfRenderTimer) {
+      clearTimeout(state.pdfRenderTimer);
+      state.pdfRenderTimer = null;
+    }
+    state.pdfRenderTimer = setTimeout(function () {
+      state.pdfRenderTimer = null;
+      renderPdfCanvas();
+    }, 60);
   }
 
   function resetPdfZoom() {
@@ -323,28 +487,16 @@
     applyPdfZoom();
   }
 
+  /** Photo strip removed — no-op kept for API compatibility. */
   function setShowPhotos(on) {
-    state.showPhotos = !!on;
-    document.body.classList.toggle("show-photos", state.showPhotos);
+    state.showPhotos = false;
+    document.body.classList.remove("show-photos");
+    const section = $("media-photos-section");
+    if (section) section.hidden = true;
     const body = $("media-photos-body");
+    if (body) body.hidden = true;
     const btn = $("btn-toggle-photos");
-    if (body) body.hidden = !state.showPhotos;
-    if (btn) {
-      btn.textContent = state.showPhotos ? "隱藏相片" : "顯示相片";
-      btn.setAttribute("aria-pressed", state.showPhotos ? "true" : "false");
-    }
-    if (state.showPhotos) {
-      renderPhoto();
-      requestAnimationFrame(function () {
-        applyPdfZoom();
-        requestAnimationFrame(applyPdfZoom);
-      });
-    } else {
-      requestAnimationFrame(function () {
-        applyPdfZoom();
-        requestAnimationFrame(applyPdfZoom);
-      });
-    }
+    if (btn) btn.hidden = true;
   }
 
   function renderPdfTabs() {
@@ -402,15 +554,21 @@
   }
 
   function showPdfInFrame(page) {
-    const frame = $("media-pdf-frame");
     const scroll = $("media-pdf-scroll");
     const openTab = $("media-pdf-open-tab");
     const empty = $("media-pdf-empty");
     const pdf = currentPdf();
     const title = $("media-pdf-title");
+    const canvas = $("media-pdf-canvas");
 
     if (!pdf || !pdf.url) {
       if (scroll) scroll.hidden = true;
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.width = 0;
+        canvas.height = 0;
+      }
       if (empty) {
         empty.hidden = false;
         if (!state.pdfs.length) empty.textContent = "尚未載入 PDF — 請按「媒體資料夾」選 PDF";
@@ -425,25 +583,17 @@
     if (empty) empty.hidden = true;
     if (scroll) scroll.hidden = false;
     const pageNum = page || state.pdfPage || 1;
-    const src = pdf.url + "#page=" + pageNum;
-    if (frame) {
-      // Force reload so browser PDF viewer honours page hash
-      frame.src = "about:blank";
-      requestAnimationFrame(function () { frame.src = src; });
-    }
+    state.pdfPage = pageNum;
     if (openTab) {
       openTab.hidden = false;
-      openTab.href = src;
+      openTab.href = pdf.url;
       openTab.setAttribute("download", pdf.name || "report.pdf");
     }
     if (title) {
       title.innerHTML = "調查 PDF · " + escapeHtml(pdf.name) + ' <span class="tag">頁面檢視</span>';
     }
-    applyPdfZoom();
-    requestAnimationFrame(function () {
-      applyPdfZoom();
-      requestAnimationFrame(applyPdfZoom);
-    });
+    updatePdfZoomLabel();
+    renderPdfCanvas();
   }
 
   function jumpToPdfPage(n) {
@@ -569,6 +719,15 @@
       }
       if (!Object.prototype.hasOwnProperty.call(props, def.key)) props[def.key] = "";
     });
+    const rem = aliasHit(props, REMARKS_ALIASES);
+    if (rem && rem.key !== "Remarks") {
+      if (props.Remarks == null || props.Remarks === "") props.Remarks = rem.value;
+    }
+    if (!Object.prototype.hasOwnProperty.call(props, "Remarks")) props.Remarks = "";
+    if (!Object.prototype.hasOwnProperty.call(props, "Species")) {
+      const sp = aliasHit(props, ["Species", "species", "樹種", "树种", "學名"]);
+      props.Species = sp ? sp.value : "";
+    }
     return props;
   }
 
@@ -768,7 +927,6 @@
   function setSelectedTree(treeId, props) {
     const id = normalizeTreeId(treeId);
     state.treeId = id;
-    // Keep photo index when browsing "all"; reset when tree-filtered
     if (state.filterMode === "tree") state.photoIndex = 0;
 
     let useProps = props;
@@ -791,6 +949,11 @@
     resetPdfZoom();
     renderPhoto();
     updatePdfLibrary();
+  }
+
+  /** Photo strip removed from UI — kept as no-op for call sites. */
+  function renderPhoto() {
+    /* intentionally empty */
   }
 
   function stepPhoto(dir) {
@@ -1153,6 +1316,7 @@
     const btnClear = $("btn-media-clear");
     if (btnClear) {
       btnClear.addEventListener("click", () => {
+        forgetAllPdfDocs();
         revokeAll();
         state.photos = [];
         state.pdfs = [];
@@ -1180,21 +1344,14 @@
     if (pdfPrev) pdfPrev.addEventListener("click", () => stepPdfPage(-1));
     if (pdfNext) pdfNext.addEventListener("click", () => stepPdfPage(1));
 
-    const btnPhotos = $("btn-toggle-photos");
-    if (btnPhotos) btnPhotos.addEventListener("click", () => setShowPhotos(!state.showPhotos));
     setShowPhotos(false);
+    ensurePdfjsConfigured();
 
-    // Keyboard: PDF pages primary; photos only when photo section open
+    // Keyboard: PDF page navigation
     document.addEventListener("keydown", (e) => {
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
-      if (e.key === "ArrowLeft") {
-        if (state.showPhotos) stepPhoto(-1);
-        else stepPdfPage(-1);
-      }
-      if (e.key === "ArrowRight") {
-        if (state.showPhotos) stepPhoto(1);
-        else stepPdfPage(1);
-      }
+      if (e.key === "ArrowLeft") stepPdfPage(-1);
+      if (e.key === "ArrowRight") stepPdfPage(1);
     });
 
     window.addEventListener("resize", function () {
@@ -1202,9 +1359,8 @@
     });
 
     // Do not auto-load demo media in primary UI; use ?demo=1 (app.js) for samples.
-    setStatusHint("尚未載入媒體 — 請按「媒體資料夾」選 PDF／相片（右側以 PDF 頁面為主；可唔對應地圖／清單）");
+    setStatusHint("尚未載入 PDF — 請按「媒體資料夾」選 PDF（右側為高清晰度頁面；清單／地圖互不依賴）");
     setFilterMode("all");
-    renderPhoto();
     updatePdfLibrary();
   }
 
