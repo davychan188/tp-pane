@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -964,7 +964,7 @@
         }
         if (t.leafletMarker.unbindTooltip) t.leafletMarker.unbindTooltip();
         t.leafletMarker.bindTooltip(String(newId), {
-          permanent: false, direction: "top", offset: [0, -4], className: "annot-leaflet-label"
+          permanent: true, direction: "top", offset: [0, -4], className: "annot-leaflet-label"
         });
       } catch (_) {}
     }
@@ -2896,7 +2896,7 @@
         className: "annot-leaflet-marker",
         bubblingMouseEvents: false
       });
-      marker.bindTooltip(String(tree.id), { permanent: false, direction: "top", offset: [0, -4], className: "annot-leaflet-label" });
+      marker.bindTooltip(String(tree.id), { permanent: true, direction: "top", offset: [0, -4], className: "annot-leaflet-label" });
       marker.feature = tree.feature;
       marker.on("click", function (e) {
         if (typeof L !== "undefined" && L.DomEvent) L.DomEvent.stopPropagation(e);

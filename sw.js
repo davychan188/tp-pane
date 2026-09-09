@@ -1,4 +1,4 @@
-const CACHE = "tp-pane-v88";
+const CACHE = "tp-pane-v89";
 const ASSETS = [
   "./index.html",
   "./styles.css",
