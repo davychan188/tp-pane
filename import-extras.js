@@ -584,9 +584,39 @@
     inp.setAttribute("autocapitalize", "off");
   }
 
+  let editOverlayTouchGuard = null;
+
+  function lockPageForEditOverlay() {
+    document.documentElement.classList.add("edit-overlay-open");
+    document.body.classList.add("edit-overlay-open");
+    if (!editOverlayTouchGuard) {
+      editOverlayTouchGuard = function (e) {
+        if (e.target && e.target.closest &&
+            e.target.closest(".tree-list-edit-overlay-panel, .tree-list-edit-overlay-input, textarea, input")) {
+          return;
+        }
+        e.preventDefault();
+      };
+      document.addEventListener("touchmove", editOverlayTouchGuard, { passive: false, capture: true });
+      document.addEventListener("wheel", editOverlayTouchGuard, { passive: false, capture: true });
+    }
+  }
+
+  function unlockPageForEditOverlay() {
+    if (document.querySelector(".tree-list-edit-overlay")) return;
+    document.documentElement.classList.remove("edit-overlay-open");
+    document.body.classList.remove("edit-overlay-open");
+    if (editOverlayTouchGuard) {
+      document.removeEventListener("touchmove", editOverlayTouchGuard, true);
+      document.removeEventListener("wheel", editOverlayTouchGuard, true);
+      editOverlayTouchGuard = null;
+    }
+  }
+
   function removeListEditOverlay() {
     const el = document.getElementById("tree-list-edit-overlay");
     if (el && el.parentNode) el.parentNode.removeChild(el);
+    unlockPageForEditOverlay();
   }
 
   /** Center the enlarge-edit card in the viewport (no CSS transform — better Pencil/Scribble). */
@@ -647,6 +677,7 @@
     panel.appendChild(inp);
     wrap.appendChild(panel);
     document.body.appendChild(wrap);
+    lockPageForEditOverlay();
     placeListEditOverlay(wrap);
     requestAnimationFrame(function () { placeListEditOverlay(wrap); });
     inp.focus();
@@ -1549,7 +1580,8 @@
 
   function getMapRefMediaEl() {
     const img = $("map-ref-img");
-    if (img && !img.hidden && img.getAttribute("src") && img.naturalWidth > 0) return img;
+    // v83: do not require !hidden — src + naturalWidth is enough for composite save
+    if (img && img.getAttribute("src") && img.naturalWidth > 0) return img;
     return null;
   }
 
@@ -2634,7 +2666,25 @@
     return (state.sourceName ? String(state.sourceName).replace(/\.[^.]+$/, "") : "trees");
   }
 
+  function isAppleTouchDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function dataURLToBlob(dataUrl) {
+    const parts = String(dataUrl || "").split(",");
+    const header = parts[0] || "";
+    const data = parts[1] || "";
+    const mimeMatch = header.match(/data:([^;]+)/);
+    const mime = (mimeMatch && mimeMatch[1]) || "application/octet-stream";
+    const bin = atob(data);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+  }
+
   function triggerBlobDownload(blob, filename) {
+    if (!blob) return false;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -2647,7 +2697,21 @@
     setTimeout(function () {
       try { a.remove(); } catch (_) {}
       try { URL.revokeObjectURL(url); } catch (_) {}
-    }, 2000);
+    }, 2500);
+    return true;
+  }
+
+  function tryShareFile(blob, filename) {
+    try {
+      if (!navigator.share || !navigator.canShare) return null;
+      const file = new File([blob], filename || "download", {
+        type: (blob && blob.type) || "application/octet-stream"
+      });
+      if (!navigator.canShare({ files: [file] })) return null;
+      return navigator.share({ files: [file], title: filename || "download" });
+    } catch (_) {
+      return null;
+    }
   }
 
   function collectTreeExportRows() {
@@ -2820,36 +2884,75 @@
     });
 
     const base = (state.mapRefName ? String(state.mapRefName).replace(/\.[^.]+$/, "") : "map") + "_ink.png";
-    // Prefer sync data-URL download so iPad Safari keeps the user-gesture chain.
+    setImportStatus("正在產生地圖 PNG…", "");
+
+    // Cap output size so iPad Safari can finish toDataURL inside the user-gesture turn
+    let out = canvas;
+    const maxEdge = 4096;
+    const longEdge = Math.max(nw, nh);
+    if (longEdge > maxEdge) {
+      const s = maxEdge / longEdge;
+      const scaled = document.createElement("canvas");
+      scaled.width = Math.max(1, Math.round(nw * s));
+      scaled.height = Math.max(1, Math.round(nh * s));
+      const sctx = scaled.getContext("2d");
+      if (sctx) {
+        sctx.fillStyle = "#ffffff";
+        sctx.fillRect(0, 0, scaled.width, scaled.height);
+        sctx.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+        out = scaled;
+      }
+    }
+
+    let blob = null;
     try {
-      const dataUrl = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = base;
-      a.rel = "noopener";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { try { a.remove(); } catch (_) {} }, 1500);
-      setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
-      return;
+      const dataUrl = out.toDataURL("image/png");
+      blob = dataURLToBlob(dataUrl);
     } catch (err) {
       console.warn("toDataURL failed, trying toBlob", err);
     }
+
+    function finishDownload(b) {
+      if (!b) {
+        setImportStatus("PNG 產生失敗", "error");
+        return;
+      }
+      // iPad: Share sheet is the most reliable "Save to Files / Photos" path
+      if (isAppleTouchDevice()) {
+        const shared = tryShareFile(b, base);
+        if (shared) {
+          shared.then(function () {
+            setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
+          }).catch(function (err) {
+            if (err && err.name === "AbortError") {
+              // User cancelled share — still try anchor download
+              triggerBlobDownload(b, base);
+              setImportStatus("已取消分享；已嘗試下載 PNG", "warn");
+              return;
+            }
+            triggerBlobDownload(b, base);
+            setImportStatus("已下載地圖 PNG（含墨跡）", "ok");
+          });
+          setImportStatus("請在分享選單選擇「儲存到檔案」／相片", "");
+          return;
+        }
+      }
+      triggerBlobDownload(b, base);
+      setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
+    }
+
+    if (blob) {
+      finishDownload(blob);
+      return;
+    }
     await new Promise(function (resolve) {
-      if (!canvas.toBlob) {
-        setImportStatus("PNG 下載失敗", "error");
+      if (!out.toBlob) {
+        setImportStatus("PNG 下載失敗（瀏覽器不支援）", "error");
         resolve();
         return;
       }
-      canvas.toBlob(function (blob) {
-        if (!blob) {
-          setImportStatus("PNG 產生失敗", "error");
-          resolve();
-          return;
-        }
-        triggerBlobDownload(blob, base);
-        setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
+      out.toBlob(function (b) {
+        finishDownload(b);
         resolve();
       }, "image/png");
     });
@@ -3430,13 +3533,28 @@
     if (btnClearMap) btnClearMap.addEventListener("click", clearMapRef);
 
     const btnMapSave = $("btn-map-save");
-    if (btnMapSave) {
-      btnMapSave.addEventListener("click", function () {
-        saveMapCompositePng().catch(function (err) {
+    if (btnMapSave && !btnMapSave._mapSaveBound) {
+      btnMapSave._mapSaveBound = true;
+      const runSave = function (ev) {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+        setImportStatus("儲存地圖中…", "");
+        try {
+          const ret = saveMapCompositePng();
+          if (ret && typeof ret.then === "function") {
+            ret.catch(function (err) {
+              console.error(err);
+              setImportStatus("儲存地圖失敗：" + (err && err.message ? err.message : err), "error");
+            });
+          }
+        } catch (err) {
           console.error(err);
           setImportStatus("儲存地圖失敗：" + (err && err.message ? err.message : err), "error");
-        });
-      });
+        }
+      };
+      btnMapSave.addEventListener("click", runSave);
     }
 
     const mzin = $("map-ref-zoom-in");

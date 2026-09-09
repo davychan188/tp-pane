@@ -2303,17 +2303,58 @@
     return n.replace(/\.(gpkg|sqlite|db|geojson|json)$/i, "") + "-edited.geojson";
   }
 
+  function isAppleTouchDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function collectImportTreesAsGeoJSON() {
+    if (!window.GpkgImport || typeof window.GpkgImport.getTrees !== "function") return null;
+    const trees = window.GpkgImport.getTrees() || [];
+    if (!trees.length) return null;
+    const features = trees.map(function (t) {
+      const props = Object.assign({ "Tree ID": t.id }, t.props || {});
+      if (t.x != null) props.mapX = t.x;
+      if (t.y != null) props.mapY = t.y;
+      if (t.source) props.Source = t.source;
+      const lat = props.Latitude != null ? Number(props.Latitude) : NaN;
+      const lng = props.Longitude != null ? Number(props.Longitude) : NaN;
+      let geometry;
+      if (isFinite(lat) && isFinite(lng)) {
+        geometry = { type: "Point", coordinates: [lng, lat] };
+      } else {
+        // Placeholder geometry so GeoJSON stays valid when only map-% coords exist
+        geometry = { type: "Point", coordinates: [0, 0] };
+        props._placeholderXY = true;
+      }
+      return { type: "Feature", properties: props, geometry: geometry };
+    });
+    return { type: "FeatureCollection", features: features };
+  }
+
   async function saveAsNewFile() {
-    const fc = collectEditedCollection();
+    setStatus("另存處理中…", "");
+    let fc = collectEditedCollection();
+    let fromImport = false;
     if (!fc.features.length) {
-      setStatus("Open a file first, then Save as.", "warn");
+      const imported = collectImportTreesAsGeoJSON();
+      if (imported && imported.features.length) {
+        fc = imported;
+        fromImport = true;
+      }
+    }
+    if (!fc.features.length) {
+      setStatus("沒有可另存的資料。請先開啟 GPKG／GeoJSON，或匯入 Excel 樹木清單；地圖墨跡請用「儲存地圖」。", "warn");
       return;
     }
-    const name = suggestedSaveName();
+    const name = fromImport
+      ? (((window.GpkgImport.getState && window.GpkgImport.getState().sourceName) || "trees").replace(/\.[^.]+$/, "") + "-list.geojson")
+      : suggestedSaveName();
     const text = JSON.stringify(fc, null, 2);
     const blob = new Blob([text], { type: "application/geo+json" });
-    try {
-      if (window.showSaveFilePicker) {
+    // iPad Safari: showSaveFilePicker is unreliable / may hang — prefer anchor download
+    if (!isAppleTouchDevice() && window.showSaveFilePicker) {
+      try {
         const handle = await window.showSaveFilePicker({
           suggestedName: name,
           types: [
@@ -2323,19 +2364,25 @@
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
-        setStatus("Saved " + handle.name + " (" + fc.features.length + " spots).", "ok");
+        setStatus("已另存 " + handle.name + "（" + fc.features.length + " 點）", "ok");
         return;
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          setStatus("已取消另存", "warn");
+          return;
+        }
+        // fall through to download
       }
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
     }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
+    a.rel = "noopener";
+    a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    setStatus("Downloaded " + name + " (" + fc.features.length + " spots).", "ok");
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    setStatus("已下載 " + name + "（" + fc.features.length + " 點）" + (fromImport ? " · 來自樹木清單" : ""), "ok");
   }
 
   function catalogProp(props, aliases) {
@@ -2575,8 +2622,8 @@
   }
 
   async function downloadBlob(blob, name, types) {
-    try {
-      if (window.showSaveFilePicker) {
+    if (!isAppleTouchDevice() && window.showSaveFilePicker) {
+      try {
         const handle = await window.showSaveFilePicker({
           suggestedName: name,
           types: types || [{ description: "Excel", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }]
@@ -2584,19 +2631,24 @@
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
-        setStatus("Saved " + handle.name + ".", "ok");
+        setStatus("已儲存 " + handle.name, "ok");
         return;
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          setStatus("已取消儲存", "warn");
+          return;
+        }
       }
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
     }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
+    a.rel = "noopener";
+    a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    setStatus("Downloaded " + name + ".", "ok");
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    setStatus("已下載 " + name, "ok");
   }
 
   async function exportCatalogExcel() {
@@ -2859,7 +2911,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=82").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=83").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

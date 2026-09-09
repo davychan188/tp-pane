@@ -235,7 +235,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=81";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=83";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -982,9 +982,39 @@
     }
   }
 
+  let editOverlayTouchGuard = null;
+
+  function lockPageForEditOverlay() {
+    document.documentElement.classList.add("edit-overlay-open");
+    document.body.classList.add("edit-overlay-open");
+    if (!editOverlayTouchGuard) {
+      editOverlayTouchGuard = function (e) {
+        if (e.target && e.target.closest &&
+            e.target.closest(".tree-list-edit-overlay-panel, .tree-list-edit-overlay-input, textarea, input")) {
+          return;
+        }
+        e.preventDefault();
+      };
+      document.addEventListener("touchmove", editOverlayTouchGuard, { passive: false, capture: true });
+      document.addEventListener("wheel", editOverlayTouchGuard, { passive: false, capture: true });
+    }
+  }
+
+  function unlockPageForEditOverlay() {
+    if (document.querySelector(".tree-list-edit-overlay")) return;
+    document.documentElement.classList.remove("edit-overlay-open");
+    document.body.classList.remove("edit-overlay-open");
+    if (editOverlayTouchGuard) {
+      document.removeEventListener("touchmove", editOverlayTouchGuard, true);
+      document.removeEventListener("wheel", editOverlayTouchGuard, true);
+      editOverlayTouchGuard = null;
+    }
+  }
+
   function removeAttrEditOverlay() {
     const node = document.getElementById("attr-edit-overlay");
     if (node && node.parentNode) node.parentNode.removeChild(node);
+    unlockPageForEditOverlay();
   }
 
   /** Center attrs enlarge-edit in the viewport (no CSS transform — Pencil/Scribble friendly). */
@@ -1041,6 +1071,7 @@
     panel.appendChild(inp);
     wrap.appendChild(panel);
     document.body.appendChild(wrap);
+    lockPageForEditOverlay();
     placeAttrEditOverlay(wrap);
     requestAnimationFrame(function () { placeAttrEditOverlay(wrap); });
     inp.focus();
@@ -1757,6 +1788,28 @@
     if (pdfPrev) pdfPrev.addEventListener("click", () => stepPdfPage(-1));
     if (pdfNext) pdfNext.addEventListener("click", () => stepPdfPage(1));
     if (pageNowBtn) pageNowBtn.addEventListener("click", () => promptJumpPdfPage());
+
+    const dlBtn = $("media-pdf-download");
+    if (dlBtn && !dlBtn._dlBound) {
+      dlBtn._dlBound = true;
+      dlBtn.addEventListener("click", function (e) {
+        const href = dlBtn.getAttribute("href") || "";
+        const fname = dlBtn.getAttribute("download") || "tree.pdf";
+        if (dlBtn.hidden || !href || href === "#") {
+          e.preventDefault();
+          setStatusHint("尚未載入可下載的 PDF");
+          if (window.GpkgViewer && window.GpkgViewer.setStatus) {
+            window.GpkgViewer.setStatus("尚未載入可下載的 PDF", "warn");
+          }
+          return;
+        }
+        // Keep default download navigation; surface visible feedback (no silent fail)
+        setStatusHint("正在下載 " + fname + "…");
+        if (window.GpkgViewer && window.GpkgViewer.setStatus) {
+          window.GpkgViewer.setStatus("正在下載 " + fname + "…", "ok");
+        }
+      });
+    }
 
     setShowPhotos(false);
     ensurePdfjsConfigured();

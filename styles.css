@@ -1258,7 +1258,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v82: pinch-only zoom (no ±). v78: hide imported media names in chrome; tighten media-head/tabs for PDF */
+/* v83: edit overlay white/black + page lock. v82: pinch-only zoom (no ±). v78: hide imported media names */
 .media-nums {
   display: none !important;
 }
@@ -1661,12 +1661,13 @@ body.has-tree-list .tree-list-panel,
   justify-content: center;
   padding: max(12px, env(safe-area-inset-top, 0px)) 16px max(12px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
-  background: rgba(2, 6, 23, 0.58);
+  background: rgba(15, 23, 42, 0.55);
   pointer-events: auto;
   -webkit-user-select: text;
   user-select: text;
   /* Explicitly avoid transform — iOS Scribble / Pencil mapping breaks under scale transforms */
   transform: none;
+  touch-action: none; /* scrim blocks pan/zoom underneath */
 }
 .tree-list-edit-overlay-panel {
   display: flex;
@@ -1678,10 +1679,13 @@ body.has-tree-list .tree-list-panel,
   padding: 10px 12px 12px;
   border-radius: 12px;
   border: 2px solid var(--accent);
-  background: var(--bg);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(91, 140, 255, 0.35);
+  background: #ffffff; /* v83: high-contrast white panel */
+  color: #111827;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(47, 157, 99, 0.35);
   box-sizing: border-box;
   transform: none;
+  touch-action: manipulation;
+  pointer-events: auto;
 }
 .tree-list-edit-overlay.is-wide .tree-list-edit-overlay-panel {
   width: min(42vw, 390px);
@@ -1693,7 +1697,7 @@ body.has-tree-list .tree-list-panel,
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: var(--tag-fg);
+  color: #111827; /* readable on white */
   line-height: 1.3;
 }
 .tree-list-edit-overlay-input,
@@ -1708,15 +1712,29 @@ body.has-tree-list .tree-list-panel,
   line-height: 1.4;
   padding: 12px 14px;
   border-radius: 10px;
-  border: 2px solid rgba(91, 140, 255, 0.85);
-  background: #0a100c;
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+  border: 2px solid rgba(47, 157, 99, 0.85);
+  background: #ffffff; /* v83: white field, black text */
+  color: #111827;
+  caret-color: #111827;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
   box-sizing: border-box;
   -webkit-overflow-scrolling: touch;
   /* Real layout size — do not scale this node */
   transform: none;
   touch-action: manipulation;
+  pointer-events: auto;
+}
+/* v83: lock underlying page while enlarge-edit overlay is open */
+html.edit-overlay-open,
+body.edit-overlay-open {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+body.edit-overlay-open > *:not(.tree-list-edit-overlay) {
+  pointer-events: none !important;
+}
+body.edit-overlay-open .tree-list-edit-overlay {
+  pointer-events: auto !important;
 }
 .tree-list-edit-overlay.is-num .tree-list-edit-overlay-input {
   min-height: max(18vh, 90px);
