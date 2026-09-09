@@ -2859,7 +2859,7 @@
   window.addEventListener("resize", () => map.invalidateSize());
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=80").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=81").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

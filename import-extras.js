@@ -29,6 +29,10 @@
   const SPREAD_HINTS = ["crown spread (m)", "crown spread", "spread_m", "spread", "crown", "冠幅", "s"];
   const DEFECT_HINTS = ["defect", "缺陷", "condition"];
   const REMARKS_HINTS = ["remarks", "備註", "备注", "remark", "note", "notes", "註解", "附註"];
+  const RECOMMEND_HINTS = [
+    "recommendation", "recommendations", "建議", "建议", "處理建議", "处理建议",
+    "proposed mitigation", "proposed mitigation measures", "mitigation", "measures", "action", "actions"
+  ];
   const LOCATION_HINTS = ["location", "位置", "site", "address", "地點", "地点"];
   const LAT_HINTS = ["lat", "latitude", "緯度", "纬度", "y_wgs", "wgs_y", "wgs84_y"];
   const LON_HINTS = ["lon", "lng", "long", "longitude", "經度", "经度", "x_wgs", "wgs_x", "wgs84_x"];
@@ -38,6 +42,7 @@
   const LS_SESSION = "tp-pane-session-trees";
   const LS_HIDE_MEDIA = "tp-pane-hide-media";
   const LS_INK_PREFS = "tp-pane-ink-prefs";
+  const LS_COL_MAP = "tp-pane-excel-col-map";
   let persistTimer = null;
   let restoring = false;
 
@@ -558,7 +563,8 @@
     const fl = f.toLowerCase();
     const isMetric = isMetricListField(field);
     const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
-    const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注";
+    const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注" ||
+      f === "Recommendation" || fl === "recommendation" || f === "建議" || f === "建议";
     if (isMetric) {
       // Prefer text + decimal so empty values stay editable; shows numeric keypad.
       inp.setAttribute("inputmode", "decimal");
@@ -620,7 +626,8 @@
     wrap.setAttribute("role", "dialog");
     wrap.setAttribute("aria-modal", "true");
     if (fieldEl.classList.contains("tree-list-num")) wrap.classList.add("is-num");
-    if (fieldEl.classList.contains("tree-list-remarks") || fieldEl.classList.contains("tree-list-sp")) {
+    if (fieldEl.classList.contains("tree-list-remarks") || fieldEl.classList.contains("tree-list-sp") ||
+        fieldEl.classList.contains("tree-list-rec")) {
       wrap.classList.add("is-wide");
     }
     const panel = document.createElement("div");
@@ -977,6 +984,153 @@
     return null;
   }
 
+
+  const EXCEL_MAP_FIELDS = [
+    { key: "Tree ID", label: "樹號 Tree No", required: true, hints: null },
+    { key: "Species", label: "樹種 Species", required: false, hints: SPECIES_HINTS },
+    { key: "DBH", label: "DBH", required: false, hints: DBH_HINTS },
+    { key: "Height", label: "高度 Height", required: false, hints: HEIGHT_HINTS },
+    { key: "Spread", label: "冠幅 Spread", required: false, hints: SPREAD_HINTS },
+    { key: "Remarks", label: "備註 Remark", required: false, hints: REMARKS_HINTS },
+    { key: "Recommendation", label: "建議 Recommendation", required: false, hints: RECOMMEND_HINTS }
+  ];
+
+  function normalizeTableRows(rows) {
+    return (rows || []).map((row) => {
+      const out = {};
+      Object.keys(row).forEach((k) => {
+        out[stripBom(k).trim() || k] = row[k];
+      });
+      return out;
+    });
+  }
+
+  function autoGuessMapping(headers, rows) {
+    const map = {};
+    const resolved = resolveIdCol(headers, rows || []);
+    if (resolved && resolved.col) map["Tree ID"] = resolved.col;
+    EXCEL_MAP_FIELDS.forEach((f) => {
+      if (f.key === "Tree ID") return;
+      if (!f.hints) return;
+      const col = findCol(headers, f.hints);
+      if (col) map[f.key] = col;
+    });
+    return map;
+  }
+
+  function loadRememberedColMap(headers) {
+    try {
+      const raw = localStorage.getItem(LS_COL_MAP);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      const saved = (data && data.map) ? data.map : data;
+      if (!saved || typeof saved !== "object") return null;
+      const out = {};
+      Object.keys(saved).forEach((k) => {
+        const h = saved[k];
+        if (h && headers.indexOf(h) >= 0) out[k] = h;
+      });
+      return Object.keys(out).length ? out : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveRememberedColMap(mapping) {
+    try {
+      localStorage.setItem(LS_COL_MAP, JSON.stringify({ map: mapping || {}, at: Date.now() }));
+    } catch (_) {}
+  }
+
+  function ensureColMapDialog() {
+    let dlg = $("excel-colmap-dialog");
+    if (dlg) return dlg;
+    dlg = document.createElement("div");
+    dlg.id = "excel-colmap-dialog";
+    dlg.className = "excel-colmap-dialog";
+    dlg.hidden = true;
+    dlg.innerHTML =
+      '<div class="excel-colmap-card" role="dialog" aria-modal="true" aria-labelledby="excel-colmap-title">' +
+      '<h3 id="excel-colmap-title">欄位對應 Column mapping</h3>' +
+      '<p class="hint">請確認 Excel／CSV 欄位對應。已自動猜測常見欄名；可改下拉選單後按確定。</p>' +
+      '<div class="excel-colmap-grid" id="excel-colmap-grid"></div>' +
+      '<label class="excel-colmap-remember"><input type="checkbox" id="excel-colmap-remember" checked /> 記住這組對應</label>' +
+      '<div class="excel-colmap-actions">' +
+      '<button class="btn" type="button" id="btn-excel-colmap-cancel">取消</button>' +
+      '<button class="btn btn-primary" type="button" id="btn-excel-colmap-ok">確定匯入</button>' +
+      "</div></div>";
+    document.body.appendChild(dlg);
+    return dlg;
+  }
+
+  function promptColumnMapping(headers, rows) {
+    return new Promise((resolve) => {
+      const dlg = ensureColMapDialog();
+      const grid = $("excel-colmap-grid");
+      const rememberEl = $("excel-colmap-remember");
+      const remembered = loadRememberedColMap(headers) || {};
+      const guessed = autoGuessMapping(headers, rows);
+      const initial = Object.assign({}, guessed, remembered);
+      // Prefer remembered only when that header still exists; already filtered.
+      // But do not wipe required Tree ID if remembered lacked it.
+      if (!initial["Tree ID"] && guessed["Tree ID"]) initial["Tree ID"] = guessed["Tree ID"];
+
+      const noneLab = "— 不匯入 —";
+      let html = "";
+      EXCEL_MAP_FIELDS.forEach((f) => {
+        const sel = initial[f.key] || "";
+        html += '<label class="excel-colmap-row">' +
+          '<span class="excel-colmap-lab">' + escapeHtml(f.label) +
+          (f.required ? ' <em>*</em>' : "") + "</span>" +
+          '<select data-map-key="' + escapeHtml(f.key) + '" aria-label="' + escapeHtml(f.label) + '">' +
+          '<option value="">' + noneLab + "</option>";
+        headers.forEach((h) => {
+          const v = String(h);
+          html += '<option value="' + escapeHtml(v) + '"' +
+            (sel === v ? " selected" : "") + ">" + escapeHtml(v || "(空白)") + "</option>";
+        });
+        html += "</select></label>";
+      });
+      if (grid) grid.innerHTML = html;
+      if (rememberEl) rememberEl.checked = true;
+      dlg.hidden = false;
+
+      function cleanup() {
+        dlg.hidden = true;
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        dlg.removeEventListener("click", onBackdrop);
+      }
+      function onCancel() {
+        cleanup();
+        resolve(null);
+      }
+      function onOk() {
+        const mapping = {};
+        Array.prototype.forEach.call(dlg.querySelectorAll("select[data-map-key]"), (sel) => {
+          const key = sel.getAttribute("data-map-key");
+          const val = sel.value;
+          if (key && val) mapping[key] = val;
+        });
+        if (!mapping["Tree ID"]) {
+          setImportStatus("請選擇樹號欄 Tree No", "warn");
+          return;
+        }
+        if (rememberEl && rememberEl.checked) saveRememberedColMap(mapping);
+        cleanup();
+        resolve(mapping);
+      }
+      function onBackdrop(e) {
+        if (e.target === dlg) onCancel();
+      }
+      const okBtn = $("btn-excel-colmap-ok");
+      const cancelBtn = $("btn-excel-colmap-cancel");
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      dlg.addEventListener("click", onBackdrop);
+    });
+  }
+
   function renameNice(props, fromKey, toKey) {
     if (!fromKey || fromKey === toKey) return;
     if (props[toKey] != null && props[toKey] !== "") return;
@@ -984,27 +1138,28 @@
     props[toKey] = props[fromKey];
   }
 
-  function rowsToFeatures(rows) {
+  function rowsToFeatures(rows, mapping) {
     if (!rows || !rows.length) throw new Error("表格沒有資料列");
     // Normalize BOM on keys (CSV / some Excel exports)
-    rows = rows.map((row) => {
-      const out = {};
-      Object.keys(row).forEach((k) => {
-        out[stripBom(k).trim() || k] = row[k];
-      });
-      return out;
-    });
+    rows = normalizeTableRows(rows);
     const headers = Object.keys(rows[0]);
-    const resolved = resolveIdCol(headers, rows);
-    const idCol = resolved.col;
+    mapping = mapping || {};
+    let idCol = mapping["Tree ID"] || null;
+    let idColNote = null;
+    if (!idCol) {
+      const resolved = resolveIdCol(headers, rows);
+      idCol = resolved.col;
+      idColNote = resolved.note;
+    }
     if (!idCol) {
       throw new Error("找不到樹木編號欄。現有欄名：" + (headers.map((h) => stripBom(h).trim() || "(空白)").join("、") || "（無）"));
     }
-    const speciesCol = findCol(headers, SPECIES_HINTS);
-    const dbhCol = findCol(headers, DBH_HINTS);
-    const heightCol = findCol(headers, HEIGHT_HINTS);
-    const spreadCol = findCol(headers, SPREAD_HINTS);
-    const remarksCol = findCol(headers, REMARKS_HINTS);
+    const speciesCol = mapping.Species || findCol(headers, SPECIES_HINTS);
+    const dbhCol = mapping.DBH || findCol(headers, DBH_HINTS);
+    const heightCol = mapping.Height || findCol(headers, HEIGHT_HINTS);
+    const spreadCol = mapping.Spread || findCol(headers, SPREAD_HINTS);
+    const remarksCol = mapping.Remarks || findCol(headers, REMARKS_HINTS);
+    const recommendCol = mapping.Recommendation || findCol(headers, RECOMMEND_HINTS);
     const defectCol = findCol(headers, DEFECT_HINTS);
     const locCol = findCol(headers, LOCATION_HINTS);
     const latCol = findCol(headers, LAT_HINTS);
@@ -1034,14 +1189,16 @@
       renameNice(props, heightCol, "Height");
       renameNice(props, spreadCol, "Spread");
       renameNice(props, remarksCol, "Remarks");
+      renameNice(props, recommendCol, "Recommendation");
       renameNice(props, defectCol, "Defect");
       renameNice(props, locCol, "Location");
-      // Ensure metrics / remarks exist for attrs card (empty editable)
+      // Ensure metrics / remarks / recommendation exist for attrs card (empty editable)
       if (!Object.prototype.hasOwnProperty.call(props, "Species")) props.Species = "";
       if (!Object.prototype.hasOwnProperty.call(props, "DBH")) props.DBH = "";
       if (!Object.prototype.hasOwnProperty.call(props, "Height")) props.Height = "";
       if (!Object.prototype.hasOwnProperty.call(props, "Spread")) props.Spread = "";
       if (!Object.prototype.hasOwnProperty.call(props, "Remarks")) props.Remarks = "";
+      if (!Object.prototype.hasOwnProperty.call(props, "Recommendation")) props.Recommendation = "";
 
       const coord = pickCoord(row, headers, latCol, lonCol, xCol, yCol);
       let geometry = null;
@@ -1061,7 +1218,7 @@
       });
     });
     if (!features.length) throw new Error("沒有有效的樹木列（編號欄為空？）");
-    return { features: features, idCol: idCol, idColNote: resolved.note };
+    return { features: features, idCol: idCol, idColNote: idColNote };
   }
 
   function fmtXy(n) {
@@ -1114,6 +1271,7 @@
       '<th class="col-num" scope="col" title="高度 Height">H</th>' +
       '<th class="col-num" scope="col" title="冠幅 Spread">S</th>' +
       '<th class="col-remarks" scope="col">Remarks</th>' +
+      '<th class="col-rec" scope="col">Recommendation</th>' +
       '<th class="col-xy" scope="col" title="Relative x %">x</th>' +
       '<th class="col-xy" scope="col" title="Relative y %">y</th>' +
       '<th class="col-pin" scope="col" title="有座標">📍</th>' +
@@ -1127,6 +1285,7 @@
       const h = p.Height;
       const s = p.Spread;
       const rem = p.Remarks != null ? p.Remarks : (p["備註"] != null ? p["備註"] : "");
+      const rec = p.Recommendation != null ? p.Recommendation : (p["建議"] != null ? p["建議"] : "");
       const on = selected && String(selected).toUpperCase() === String(t.id).toUpperCase();
       const tid = escapeHtml(t.id);
       const hasXy = t.x != null && t.y != null;
@@ -1138,6 +1297,7 @@
         cellHtml(tid, "Height", h, "tree-list-num", "col-num") +
         cellHtml(tid, "Spread", s, "tree-list-num", "col-num") +
         cellHtml(tid, "Remarks", rem, "tree-list-remarks", "col-remarks") +
+        cellHtml(tid, "Recommendation", rec, "tree-list-remarks tree-list-rec", "col-rec") +
         '<td class="col-xy tree-list-xy tree-list-xy-x' + (hasXy ? "" : " empty") +
         '" data-tree-id="' + tid + '" title="Relative x %">' +
         (hasXy ? escapeHtml(fmtXy(t.x)) : "—") + "</td>" +
@@ -1757,8 +1917,16 @@
 
   async function importExcelFile(file) {
     setImportStatus("解析 " + file.name + " …", "");
-    const rows = await readTableFile(file);
-    const parsed = rowsToFeatures(rows);
+    let rows = await readTableFile(file);
+    rows = normalizeTableRows(rows);
+    if (!rows.length) throw new Error("表格沒有資料列");
+    const headers = Object.keys(rows[0]);
+    const mapping = await promptColumnMapping(headers, rows);
+    if (!mapping) {
+      setImportStatus("已取消匯入", "warn");
+      return;
+    }
+    const parsed = rowsToFeatures(rows, mapping);
     const features = parsed.features;
 
     state.sourceName = file.name;
@@ -2040,6 +2208,7 @@
       Height: "",
       Spread: "",
       Remarks: "",
+      Recommendation: "",
       Defect: "",
       Location: "",
       x: x != null ? Number(x.toFixed(2)) : "",
@@ -2333,6 +2502,54 @@
     setImportStatus("已刪除 " + treeId, "");
   }
 
+  function treeExportBasename() {
+    return (state.sourceName ? String(state.sourceName).replace(/\.[^.]+$/, "") : "trees");
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "download";
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    // iPad Safari: click must stay in user-gesture turn when possible
+    a.click();
+    setTimeout(function () {
+      try { a.remove(); } catch (_) {}
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    }, 2000);
+  }
+
+  function collectTreeExportRows() {
+    return state.trees.map((t) => {
+      const p = t.props || {};
+      const x = t.x != null ? Number(t.x).toFixed(2) : "";
+      const y = t.y != null ? Number(t.y).toFixed(2) : "";
+      const lat = p.Latitude != null ? p.Latitude : "";
+      const lng = p.Longitude != null ? p.Longitude : "";
+      const src = t.source || (t.annot ? "annotate" : "import");
+      const rec = p.Recommendation != null ? p.Recommendation : (p["建議"] != null ? p["建議"] : "");
+      return {
+        "Tree ID": String(t.id),
+        Species: p.Species != null ? p.Species : "",
+        DBH: p.DBH != null ? p.DBH : "",
+        Height: p.Height != null ? p.Height : "",
+        Spread: p.Spread != null ? p.Spread : "",
+        Remarks: p.Remarks != null ? p.Remarks : "",
+        Recommendation: rec,
+        Defect: p.Defect != null ? p.Defect : "",
+        Location: p.Location != null ? p.Location : "",
+        x: x,
+        y: y,
+        Latitude: lat,
+        Longitude: lng,
+        Source: src
+      };
+    });
+  }
+
   function exportTreeListCsv() {
     if (!state.trees.length) {
       setImportStatus("清單是空的，無可匯出", "warn");
@@ -2343,30 +2560,171 @@
       const s = String(v).replace(/"/g, '""');
       return /[",\n\r]/.test(s) ? ('"' + s + '"') : s;
     }
-    const lines = ["Tree ID,Species,DBH,Height,Spread,Remarks,Defect,Location,x,y,Latitude,Longitude,Source"];
-    state.trees.forEach((t) => {
-      const p = t.props || {};
-      const id = String(t.id);
-      const x = t.x != null ? Number(t.x).toFixed(2) : "";
-      const y = t.y != null ? Number(t.y).toFixed(2) : "";
-      const lat = p.Latitude != null ? p.Latitude : "";
-      const lng = p.Longitude != null ? p.Longitude : "";
-      const src = t.source || (t.annot ? "annotate" : "import");
-      lines.push([
-        csvCell(id), csvCell(p.Species), csvCell(p.DBH), csvCell(p.Height), csvCell(p.Spread),
-        csvCell(p.Remarks), csvCell(p.Defect), csvCell(p.Location), x, y, lat, lng, csvCell(src)
-      ].join(","));
+    const cols = ["Tree ID", "Species", "DBH", "Height", "Spread", "Remarks", "Recommendation", "Defect", "Location", "x", "y", "Latitude", "Longitude", "Source"];
+    const rows = collectTreeExportRows();
+    const lines = [cols.join(",")];
+    rows.forEach((row) => {
+      lines.push(cols.map((c) => csvCell(row[c])).join(","));
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = (state.sourceName ? String(state.sourceName).replace(/\.[^.]+$/, "") : "trees") + "_annotate.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ } }, 1500);
+    triggerBlobDownload(blob, treeExportBasename() + "_annotate.csv");
     setImportStatus("已匯出 CSV（" + state.trees.length + " 棵）", "ok");
+  }
+
+  function exportTreeListXlsx() {
+    if (!state.trees.length) {
+      setImportStatus("清單是空的，無可匯出", "warn");
+      return;
+    }
+    if (typeof XLSX === "undefined") {
+      setImportStatus("Excel 匯出庫未載入", "error");
+      return;
+    }
+    const rows = collectTreeExportRows();
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: ["Tree ID", "Species", "DBH", "Height", "Spread", "Remarks", "Recommendation", "Defect", "Location", "x", "y", "Latitude", "Longitude", "Source"]
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Trees");
+    const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    triggerBlobDownload(blob, treeExportBasename() + "_annotate.xlsx");
+    setImportStatus("已匯出 Excel（" + state.trees.length + " 棵）", "ok");
+  }
+
+  function drawStrokeOnCanvas(ctx, pts, color, widthPx) {
+    if (!pts || pts.length < 2 || !ctx) return;
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    ctx.save();
+    ctx.strokeStyle = color || "#38bdf8";
+    ctx.lineWidth = Math.max(1, widthPx || 2.25);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    pts.forEach(function (p, i) {
+      const x = (Number(p.x) / 100) * w;
+      const y = (Number(p.y) / 100) * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Rasterize map image + ink / markers to PNG and download (iPad Safari friendly). */
+  async function saveMapCompositePng() {
+    const img = getMapRefMediaEl();
+    if (!img || !img.naturalWidth) {
+      setImportStatus("請先匯入地圖圖片（PNG／JPG；PDF 會自動轉影像後可儲存）", "warn");
+      return;
+    }
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (!nw || !nh) {
+      setImportStatus("地圖影像尚未就緒", "warn");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = nw;
+    canvas.height = nh;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setImportStatus("無法建立畫布", "error");
+      return;
+    }
+    try {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, nw, nh);
+      ctx.drawImage(img, 0, 0, nw, nh);
+    } catch (err) {
+      console.warn(err);
+      setImportStatus("無法讀取地圖影像（請重新匯入）", "error");
+      return;
+    }
+
+    const layer = $("map-annotate-layer");
+    const layerW = (layer && layer.clientWidth) || nw;
+    // vector-effect non-scaling-stroke ≈ CSS px on layer; scale to natural pixels
+    const pxScale = nw / Math.max(1, layerW);
+
+    (state.drawStrokes || []).forEach(function (s) {
+      const inkPts = (s && s.path && s.path.length >= 2) ? s.path : null;
+      if (!inkPts) return;
+      const col = (s.color && String(s.color)) || state.inkColor || "#38bdf8";
+      const w = (isFinite(Number(s.width)) && Number(s.width) > 0) ? Number(s.width) : (state.inkWidth || 2.25);
+      drawStrokeOnCanvas(ctx, inkPts, col, w * pxScale);
+    });
+
+    state.trees.forEach(function (t) {
+      const inkPts = (t.path && t.path.length >= 2) ? t.path : null;
+      if (inkPts) {
+        drawStrokeOnCanvas(ctx, inkPts, "#fbbf24", 2.25 * pxScale);
+      }
+      if (t.x == null || t.y == null || !isFinite(t.x) || !isFinite(t.y)) return;
+      const cx = (Number(t.x) / 100) * nw;
+      const cy = (Number(t.y) / 100) * nh;
+      const r = Math.max(4, 5 * pxScale);
+      ctx.save();
+      ctx.fillStyle = "#fbbf24";
+      ctx.strokeStyle = "#0e1510";
+      ctx.lineWidth = Math.max(1, 1.25 * pxScale);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      const label = String(t.id || "");
+      if (label) {
+        const fs = Math.max(10, Math.round(11 * pxScale));
+        ctx.font = "700 " + fs + "px system-ui, -apple-system, sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        const tx = cx + r + 3 * pxScale;
+        const ty = cy;
+        const tw = ctx.measureText(label).width;
+        const pad = 2 * pxScale;
+        ctx.fillStyle = "rgba(251, 191, 36, 0.92)";
+        ctx.fillRect(tx - pad, ty - fs * 0.6, tw + pad * 2, fs * 1.2);
+        ctx.fillStyle = "#0e1510";
+        ctx.fillText(label, tx, ty);
+      }
+      ctx.restore();
+    });
+
+    const base = (state.mapRefName ? String(state.mapRefName).replace(/\.[^.]+$/, "") : "map") + "_ink.png";
+    // Prefer sync data-URL download so iPad Safari keeps the user-gesture chain.
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = base;
+      a.rel = "noopener";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { try { a.remove(); } catch (_) {} }, 1500);
+      setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
+      return;
+    } catch (err) {
+      console.warn("toDataURL failed, trying toBlob", err);
+    }
+    await new Promise(function (resolve) {
+      if (!canvas.toBlob) {
+        setImportStatus("PNG 下載失敗", "error");
+        resolve();
+        return;
+      }
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          setImportStatus("PNG 產生失敗", "error");
+          resolve();
+          return;
+        }
+        triggerBlobDownload(blob, base);
+        setImportStatus("已儲存地圖 PNG（含墨跡）", "ok");
+        resolve();
+      }, "image/png");
+    });
   }
 
   function showIdDialog() {
@@ -2868,9 +3226,13 @@
       if (!seg) return;
       setIdMode(seg.getAttribute("data-id-mode"));
     });
-    ["btn-annot-export", "btn-annot-export-bar", "btn-annot-export-float"].forEach((id) => {
+    ["btn-annot-export", "btn-annot-export-bar", "btn-annot-export-float", "btn-annot-export-list"].forEach((id) => {
       const el = $(id);
       if (el) el.addEventListener("click", exportTreeListCsv);
+    });
+    ["btn-annot-export-xlsx", "btn-annot-export-xlsx-bar", "btn-annot-export-xlsx-list"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("click", exportTreeListXlsx);
     });
 
     const layer = $("map-annotate-layer");
@@ -2938,6 +3300,16 @@
 
     const btnClearMap = $("btn-map-ref-clear");
     if (btnClearMap) btnClearMap.addEventListener("click", clearMapRef);
+
+    const btnMapSave = $("btn-map-save");
+    if (btnMapSave) {
+      btnMapSave.addEventListener("click", function () {
+        saveMapCompositePng().catch(function (err) {
+          console.error(err);
+          setImportStatus("儲存地圖失敗：" + (err && err.message ? err.message : err), "error");
+        });
+      });
+    }
 
     const mzin = $("map-ref-zoom-in");
     const mzout = $("map-ref-zoom-out");
@@ -3036,6 +3408,8 @@
     setAnnotateMode: setAnnotateMode,
     handleLeafletClick: handleLeafletClick,
     exportTreeListCsv: exportTreeListCsv,
+    exportTreeListXlsx: exportTreeListXlsx,
+    saveMapCompositePng: saveMapCompositePng,
     updateTreeXy: updateTreeXy
   };
 

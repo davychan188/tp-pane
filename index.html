@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#152019" />
+  <meta name="theme-color" content="#f4f7f5" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="tp-pane" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>tp-pane · 樹木盤點</title>
@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=80" />
-  <link rel="stylesheet" href="styles.css?v=80" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=81" />
+  <link rel="stylesheet" href="styles.css?v=81" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -48,7 +48,7 @@
       <button class="btn" id="btn-fit" type="button">Fit</button>
       <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示樹木 PDF（地圖可擴展）">隱藏媒體</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
-      <button class="btn" id="btn-export-xlsx" type="button">匯出目錄</button>
+      <button class="btn" id="btn-export-xlsx" type="button" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
       <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
     </div>
   </header>
@@ -128,8 +128,9 @@
           <button class="btn annot-seg on" type="button" data-id-mode="auto" id="btn-id-auto" title="Auto ID T1, T2…">自動編號 Auto</button>
           <button class="btn annot-seg" type="button" data-id-mode="manual" id="btn-id-manual" title="Prompt for tree ID">手動編號 Manual</button>
         </div>
-        <button class="btn full" type="button" id="btn-annot-export" title="Export tree list CSV">匯出列表 Export CSV</button>
-        <div class="hint" id="annot-hint">地圖可直接用 Pencil／手指畫墨跡（不加樹）。要加樹請開「加樹模式」再短點地圖。PNG／JPG 最佳。</div>
+        <button class="btn full" type="button" id="btn-annot-export" title="Export tree list CSV">匯出列表 CSV</button>
+        <button class="btn full" type="button" id="btn-annot-export-xlsx" title="Export tree list Excel · 樹種／DBH／H／S／備註／建議">匯出 Excel</button>
+        <div class="hint" id="annot-hint">地圖可直接用 Pencil／手指畫墨跡（不加樹）。要加樹請開「加樹模式」再短點地圖。儲存：清單→匯出 Excel／CSV；地圖墨跡→儲存地圖；媒體→下載 PDF。</div>
       </div>
     </div>
 
@@ -181,7 +182,20 @@
 
   <div id="map"></div>
   <div class="map-ref-panel" id="map-ref-panel" hidden>
-    <div class="map-ref-toolbar">
+    <div class="map-ref-viewer" id="map-ref-viewer">
+      <!-- Zoom stage layout size = viewer × zoom (scroll pan); annotate % pins stay glued — no CSS scale -->
+      <div class="map-ref-zoom-stage" id="map-ref-zoom-stage">
+        <!-- Safari often fails blob: PDF in iframe; object + nested embed fallback; iframe kept unused unless needed -->
+        <object id="map-ref-object" class="map-ref-frame map-ref-object" type="application/pdf" hidden>
+          <embed id="map-ref-embed" class="map-ref-frame map-ref-embed" type="application/pdf" />
+        </object>
+        <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
+        <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
+        <div id="map-annotate-layer" class="map-annotate-layer" aria-hidden="true"></div>
+      </div>
+      <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>PDF→影像</div>
+    </div>
+    <div class="map-ref-controls" id="map-ref-controls">
       <span id="map-ref-label">地圖參考</span>
       <div class="map-ref-actions">
         <div class="map-ink-ctrls" role="group" aria-label="墨跡設定">
@@ -199,7 +213,9 @@
           <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動</button>
           <button class="btn annot-seg" type="button" data-id-mode="manual" title="Manual ID">手動</button>
         </div>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-bar" title="Export tree list CSV">匯出</button>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-bar" title="匯出樹木清單 CSV">匯出 CSV</button>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-xlsx-bar" title="匯出樹木清單 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
+        <button class="btn map-ref-btn-compact btn-primary" type="button" id="btn-map-save" title="將目前地圖視圖與墨跡儲存為 PNG">儲存地圖</button>
         <div class="zoom-ctrls map-ref-zoom-ctrls" role="group" aria-label="地圖參考縮放">
           <button type="button" class="zoom-btn" id="map-ref-zoom-out" title="縮小" aria-label="縮小">−</button>
           <button type="button" class="zoom-btn" id="map-ref-zoom-reset" title="重設" aria-label="重設">1×</button>
@@ -209,19 +225,7 @@
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
       </div>
-    </div>
-    <div class="map-ref-viewer" id="map-ref-viewer">
-      <!-- Zoom stage layout size = viewer × zoom (scroll pan); annotate % pins stay glued — no CSS scale -->
-      <div class="map-ref-zoom-stage" id="map-ref-zoom-stage">
-        <!-- Safari often fails blob: PDF in iframe; object + nested embed fallback; iframe kept unused unless needed -->
-        <object id="map-ref-object" class="map-ref-frame map-ref-object" type="application/pdf" hidden>
-          <embed id="map-ref-embed" class="map-ref-frame map-ref-embed" type="application/pdf" />
-        </object>
-        <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
-        <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
-        <div id="map-annotate-layer" class="map-annotate-layer" aria-hidden="true"></div>
-      </div>
-      <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>PDF→影像</div>
+      <p class="map-ref-hint">清單→匯出 Excel／CSV；地圖墨跡→儲存地圖圖檔；媒體→下載 PDF</p>
     </div>
   </div>
   <div class="annot-float-bar" id="annot-float-bar" hidden title="加樹工具（地圖左下；主控制在左側欄）">
@@ -250,7 +254,11 @@
   <section class="tree-list-panel" id="tree-list-panel" hidden aria-label="樹木列表">
     <div class="tree-list-head">
       <div class="card-title">樹木列表 Tree list <span class="tag" id="tree-list-count"></span></div>
-      <div class="hint tree-list-hint">試算表檢視 · 橫向／直向捲動 · 點儲存格編輯 · 自動儲存</div>
+      <div class="hint tree-list-hint">試算表檢視 · 點儲存格編輯 · 自動儲存</div>
+      <div class="tree-list-export-actions">
+        <button class="btn" type="button" id="btn-annot-export-list" title="匯出 CSV">匯出 CSV</button>
+        <button class="btn btn-primary" type="button" id="btn-annot-export-xlsx-list" title="匯出 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
+      </div>
     </div>
     <div class="tree-list" id="tree-list" aria-label="樹木列表"></div>
   </section>
@@ -313,18 +321,20 @@
         <button type="button" class="media-page-now" id="media-page-now" title="點擊跳至頁碼" aria-label="目前頁碼，點擊跳頁">第 — / — 頁</button>
         <button class="btn media-pdf-step" type="button" id="media-pdf-next" title="下一頁" aria-label="下一頁">›</button>
         <a class="btn media-pdf-open-tab" id="media-pdf-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前頁">新分頁</a>
+        <a class="btn media-pdf-download" id="media-pdf-download" href="#" hidden title="下載目前已匯入的 PDF 原檔">下載</a>
       </div>
       <div class="media-nums" id="media-pdf-nums" aria-label="頁碼" hidden></div>
+      <p class="media-save-hint">媒體→下載 PDF（原檔）；地圖墨跡→儲存地圖；清單→匯出 Excel／CSV</p>
     </div>
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=80"></script>
-  <script src="vendor/geopackage.min.js?v=80"></script>
-  <script src="vendor/xlsx.full.min.js?v=80"></script>
-  <script src="vendor/pdf.min.js?v=80"></script>
-  <script src="media.js?v=80"></script>
-  <script src="import-extras.js?v=80"></script>
-  <script src="app.js?v=80"></script>
+  <script src="vendor/leaflet.js?v=81"></script>
+  <script src="vendor/geopackage.min.js?v=81"></script>
+  <script src="vendor/xlsx.full.min.js?v=81"></script>
+  <script src="vendor/pdf.min.js?v=81"></script>
+  <script src="media.js?v=81"></script>
+  <script src="import-extras.js?v=81"></script>
+  <script src="app.js?v=81"></script>
 </body>
 </html>

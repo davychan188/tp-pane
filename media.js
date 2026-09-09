@@ -44,8 +44,12 @@
   ];
 
   const PRIMARY_KEYS = ["Tree ID", "TreeID", "tree_id", "tree_no", "TREE_ID", "ID", "id"];
-  const PREFERRED_OTHER = ["Species", "Remarks", "Defect", "Location"];
+  const PREFERRED_OTHER = ["Species", "Remarks", "Recommendation", "Defect", "Location"];
   const REMARKS_ALIASES = ["Remarks", "remarks", "備註", "备注", "Remark", "note", "notes", "註解", "附註"];
+  const RECOMMEND_ALIASES = [
+    "Recommendation", "recommendation", "建議", "建议", "處理建議", "处理建议",
+    "proposed mitigation", "Proposed Mitigation Measures", "mitigation", "Mitigation"
+  ];
 
   const state = {
     photos: [],       // { name, url, treeId, file? }
@@ -230,7 +234,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=80";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=81";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -582,6 +586,7 @@
     const title = $("media-pdf-title");
     const canvas = $("media-pdf-canvas");
 
+    const dl = $("media-pdf-download");
     if (!pdf || !pdf.url) {
       if (scroll) scroll.hidden = true;
       if (canvas) {
@@ -597,6 +602,7 @@
         else empty.textContent = "沒有可顯示的 PDF";
       }
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
+      if (dl) { dl.hidden = true; dl.removeAttribute("href"); dl.removeAttribute("download"); }
       if (title) title.innerHTML = '樹木 PDF <span class="tag">頁</span>';
       return;
     }
@@ -611,6 +617,15 @@
       openTab.removeAttribute("download");
       openTab.textContent = "新分頁";
       openTab.title = "新分頁開啟目前第 " + pageNum + " 頁";
+    }
+    if (dl) {
+      dl.hidden = false;
+      const rawUrl = String(pdf.url).split("#")[0];
+      dl.href = rawUrl;
+      const fname = (pdf.name && String(pdf.name).trim()) ? String(pdf.name).trim() : "tree.pdf";
+      dl.setAttribute("download", fname);
+      dl.textContent = "下載";
+      dl.title = "下載 PDF 原檔：" + fname;
     }
     if (title) {
       // v78: do not echo imported media filenames in panel chrome
@@ -757,6 +772,11 @@
       if (props.Remarks == null || props.Remarks === "") props.Remarks = rem.value;
     }
     if (!Object.prototype.hasOwnProperty.call(props, "Remarks")) props.Remarks = "";
+    const reco = aliasHit(props, RECOMMEND_ALIASES);
+    if (reco && reco.key !== "Recommendation") {
+      if (props.Recommendation == null || props.Recommendation === "") props.Recommendation = reco.value;
+    }
+    if (!Object.prototype.hasOwnProperty.call(props, "Recommendation")) props.Recommendation = "";
     if (!Object.prototype.hasOwnProperty.call(props, "Species")) {
       const sp = aliasHit(props, ["Species", "species", "樹種", "树种", "學名"]);
       props.Species = sp ? sp.value : "";
@@ -907,7 +927,9 @@
     const isMetric = isMetricAttrKey(key);
     const isSpecies = f === "Species" || fl === "species" || f === "樹種" || f === "树种";
     const isRemarks = f === "Remarks" || fl === "remarks" || f === "備註" || f === "备注" ||
-      (typeof REMARKS_ALIASES !== "undefined" && REMARKS_ALIASES.indexOf(f) >= 0);
+      f === "Recommendation" || fl === "recommendation" || f === "建議" || f === "建议" ||
+      (typeof REMARKS_ALIASES !== "undefined" && REMARKS_ALIASES.indexOf(f) >= 0) ||
+      (typeof RECOMMEND_ALIASES !== "undefined" && RECOMMEND_ALIASES.indexOf(f) >= 0);
     const isTreeId = PRIMARY_KEYS.indexOf(f) >= 0;
     if (isMetric) {
       inp.setAttribute("inputmode", "decimal");
