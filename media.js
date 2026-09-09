@@ -69,6 +69,7 @@
     pdfZoom: 1,
     pdfDocCache: new Map(), // url/name -> Promise<PDFDocumentProxy>
     pdfRenderToken: 0,
+    pdfRenderTask: null,
     pdfRenderTimer: null,
     pdfjsReady: false
   };
@@ -388,9 +389,12 @@
   }
 
   function updatePdfZoomLabel() {
-    const resetBtn = $("media-pdf-zoom-reset");
+    const readout = $("media-pdf-zoom-level");
     const s = state.pdfZoom;
-    if (resetBtn) resetBtn.textContent = s <= 1.01 ? "1×" : (Math.round(s * 10) / 10) + "×";
+    if (readout) {
+      readout.textContent = (Math.round(s * 10) / 10) + "×";
+      readout.hidden = s <= 1.01;
+    }
     const scroll = $("media-pdf-scroll");
     if (scroll) scroll.classList.toggle("is-zoomed", s > 1.01);
   }
@@ -398,6 +402,23 @@
   function setPdfZoom(scale) {
     state.pdfZoom = clamp(scale, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
     applyPdfZoom();
+  }
+
+  function isPdfRenderCancelled(err) {
+    if (!err) return false;
+    const name = err.name || "";
+    const msg = String(err.message || err || "");
+    return name === "RenderingCancelledException" ||
+      /RenderingCancelled/i.test(msg) ||
+      /cancel(led)?/i.test(msg);
+  }
+
+  async function cancelActivePdfRender() {
+    const prev = state.pdfRenderTask;
+    state.pdfRenderTask = null;
+    if (!prev) return;
+    try { prev.cancel(); } catch (e) { /* ignore */ }
+    try { await prev.promise; } catch (e) { /* ignore cancel */ }
   }
 
   async function renderPdfCanvas() {
@@ -420,6 +441,10 @@
       return;
     }
 
+    // Cancel any in-flight render before touching the shared canvas.
+    await cancelActivePdfRender();
+    if (token !== state.pdfRenderToken) return;
+
     try {
       const doc = await getPdfDocument(pdf);
       if (token !== state.pdfRenderToken) return;
@@ -432,10 +457,12 @@
 
       const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
       const baseW = (scroll && scroll.clientWidth) ? Math.max(120, scroll.clientWidth - 4) : 280;
-      const unscaled = page.getViewport({ scale: 1 });
+      // Respect page.rotate via pdf.js default (do not force rotation: 0).
+      const rotate = (typeof page.rotate === "number") ? page.rotate : 0;
+      const unscaled = page.getViewport({ scale: 1, rotation: rotate });
       const fitScale = baseW / unscaled.width;
       const displayScale = fitScale * state.pdfZoom;
-      const viewport = page.getViewport({ scale: displayScale * dpr });
+      const viewport = page.getViewport({ scale: displayScale * dpr, rotation: rotate });
 
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
@@ -459,12 +486,19 @@
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      if (token !== state.pdfRenderToken) return;
       const task = page.render({ canvasContext: ctx, viewport: viewport });
-      await task.promise;
+      state.pdfRenderTask = task;
+      try {
+        await task.promise;
+      } finally {
+        if (state.pdfRenderTask === task) state.pdfRenderTask = null;
+      }
       if (token !== state.pdfRenderToken) return;
       if (empty) empty.hidden = true;
     } catch (err) {
       if (token !== state.pdfRenderToken) return;
+      if (isPdfRenderCancelled(err)) return;
       console.warn("pdf canvas render failed", err);
       if (empty) {
         empty.hidden = false;
@@ -1472,7 +1506,7 @@
 
   /**
    * Finger pinch to zoom PDF canvas (pdf.js) + pan when zoomed.
-   * Live CSS scale during pinch; crisp re-render on release / button / wheel.
+   * Live CSS scale during pinch; crisp re-render on release / wheel (no ± buttons).
    */
   function bindPdfGestures(scroll) {
     if (!scroll || scroll._pdfGesturesBound) return;
@@ -1573,8 +1607,11 @@
         // Keep pinch mid roughly centered while previewing
         scroll.scrollLeft = pinch.ox * preview - (mid.x - rect.left);
         scroll.scrollTop = pinch.oy * preview - (mid.y - rect.top);
-        const resetBtn = $("media-pdf-zoom-reset");
-        if (resetBtn) resetBtn.textContent = live <= 1.01 ? "1×" : (Math.round(live * 10) / 10) + "×";
+        const readout = $("media-pdf-zoom-level");
+        if (readout) {
+          readout.textContent = (Math.round(live * 10) / 10) + "×";
+          readout.hidden = live <= 1.01;
+        }
         return;
       }
       if (pan && e.touches.length === 1 && state.pdfZoom > 1.01) {

@@ -1258,22 +1258,39 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v78: hide imported media names in chrome; tighten media-head/tabs for PDF */
+/* v82: pinch-only zoom (no ±). v78: hide imported media names in chrome; tighten media-head/tabs for PDF */
 .media-nums {
   display: none !important;
 }
 .media-num { display: none !important; }
 
-.media-pdf-zoom-ctrls {
+.media-pdf-zoom-ctrls { display: none !important; }
+
+.zoom-readout {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+}
+.media-pdf-zoom-readout {
   position: absolute;
   right: 10px;
   bottom: 10px;
   z-index: 2;
-  background: rgba(10, 15, 28, 0.55);
-  border-radius: 14px;
-  padding: 4px;
+  background: rgba(10, 15, 28, 0.45);
+  border-radius: 10px;
+  padding: 4px 8px;
   backdrop-filter: blur(6px);
 }
+.map-ref-zoom-readout {
+  margin-left: 4px;
+  opacity: 0.75;
+  min-width: 2.2em;
+  text-align: center;
+}
+.zoom-readout[hidden] { display: none !important; }
 
 /* Photos demoted: collapsed by default */
 /* Photo strip removed from right panel — keep rules inert */

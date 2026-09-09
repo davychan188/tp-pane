@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=81" />
-  <link rel="stylesheet" href="styles.css?v=81" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=82" />
+  <link rel="stylesheet" href="styles.css?v=82" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -216,11 +216,7 @@
         <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-bar" title="匯出樹木清單 CSV">匯出 CSV</button>
         <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-xlsx-bar" title="匯出樹木清單 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
         <button class="btn map-ref-btn-compact btn-primary" type="button" id="btn-map-save" title="將目前地圖視圖與墨跡儲存為 PNG">儲存地圖</button>
-        <div class="zoom-ctrls map-ref-zoom-ctrls" role="group" aria-label="地圖參考縮放">
-          <button type="button" class="zoom-btn" id="map-ref-zoom-out" title="縮小" aria-label="縮小">−</button>
-          <button type="button" class="zoom-btn" id="map-ref-zoom-reset" title="重設" aria-label="重設">1×</button>
-          <button type="button" class="zoom-btn" id="map-ref-zoom-in" title="放大" aria-label="放大">+</button>
-        </div>
+        <span class="zoom-readout map-ref-zoom-readout" id="map-ref-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
         <a class="btn map-ref-btn-compact" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前地圖 PDF／圖片">新分頁</a>
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
@@ -308,11 +304,7 @@
         </div>
       </div>
       <div class="media-pdf-empty" id="media-pdf-empty">尚未載入 PDF — 請按「媒體資料夾」選 PDF（可雙指縮放）</div>
-      <div class="zoom-ctrls media-pdf-zoom-ctrls" role="group" aria-label="PDF 縮放">
-        <button type="button" class="zoom-btn" id="media-pdf-zoom-out" title="縮小" aria-label="縮小">−</button>
-        <button type="button" class="zoom-btn" id="media-pdf-zoom-reset" title="重設" aria-label="重設">1×</button>
-        <button type="button" class="zoom-btn" id="media-pdf-zoom-in" title="放大" aria-label="放大">+</button>
-      </div>
+      <span class="zoom-readout media-pdf-zoom-readout" id="media-pdf-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
     </div>
 
     <div class="media-pdf-controls" id="media-pdf-controls">
@@ -329,12 +321,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=81"></script>
-  <script src="vendor/geopackage.min.js?v=81"></script>
-  <script src="vendor/xlsx.full.min.js?v=81"></script>
-  <script src="vendor/pdf.min.js?v=81"></script>
-  <script src="media.js?v=81"></script>
-  <script src="import-extras.js?v=81"></script>
-  <script src="app.js?v=81"></script>
+  <script src="vendor/leaflet.js?v=82"></script>
+  <script src="vendor/geopackage.min.js?v=82"></script>
+  <script src="vendor/xlsx.full.min.js?v=82"></script>
+  <script src="vendor/pdf.min.js?v=82"></script>
+  <script src="media.js?v=82"></script>
+  <script src="import-extras.js?v=82"></script>
+  <script src="app.js?v=82"></script>
 </body>
 </html>

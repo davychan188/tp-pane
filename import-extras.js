@@ -23,7 +23,7 @@
     "no", "no.", "num", "number", "tag", "label", "tree", "trees", "id", "fid", "gid", "編號", "编号"
   ]);
 
-  const SPECIES_HINTS = ["species", "scientific", "學名", "树种", "樹種", "chinese name", "中文名"];
+  const SPECIES_HINTS = ["scientific name", "scientific", "species", "學名", "学名", "树种", "樹種"];
   const DBH_HINTS = ["dbh", "diameter", "胸徑", "胸径"];
   const HEIGHT_HINTS = ["overall height (m)", "overall height", "height_m", "height", "高度", "h"];
   const SPREAD_HINTS = ["crown spread (m)", "crown spread", "spread_m", "spread", "crown", "冠幅", "s"];
@@ -31,8 +31,10 @@
   const REMARKS_HINTS = ["remarks", "備註", "备注", "remark", "note", "notes", "註解", "附註"];
   const RECOMMEND_HINTS = [
     "recommendation", "recommendations", "建議", "建议", "處理建議", "处理建议",
-    "proposed mitigation", "proposed mitigation measures", "mitigation", "measures", "action", "actions"
+    "proposed mitigation measure", "proposed mitigation measures", "proposed mitigation",
+    "mitigation measure", "mitigation", "measures", "action", "actions"
   ];
+  const CHINESE_NAME_HINTS = ["chinese name", "chinese", "中文名", "中文名稱", "中文名称"];
   const LOCATION_HINTS = ["location", "位置", "site", "address", "地點", "地点"];
   const LAT_HINTS = ["lat", "latitude", "緯度", "纬度", "y_wgs", "wgs_y", "wgs84_y"];
   const LON_HINTS = ["lon", "lng", "long", "longitude", "經度", "经度", "x_wgs", "wgs_x", "wgs84_x"];
@@ -930,13 +932,120 @@
     }
     if (cur.length || row.length) { row.push(cur); rows.push(row); }
     if (!rows.length) return [];
-    const headers = rows[0].map((h) => stripBom(String(h || "")).trim());
+    return matrixToObjects(rows);
+  }
+
+  function cleanHeaderCell(v) {
+    return stripBom(String(v == null ? "" : v)).replace(/\s+/g, " ").trim();
+  }
+
+  function isTreeNoHeaderCell(cell) {
+    const n = normHeader(cell);
+    const c = compactHeader(cell);
+    if (!n) return false;
+    if (n === "tree no" || n === "tree no." || c === "treeno" || n === "tree number" || c === "treenumber") return true;
+    if (n === "樹號" || n === "树号" || n === "樹木編號" || n === "树木编号" || n === "樹木编号" || n === "树木編號") return true;
+    if (n.indexOf("tree no") === 0) return true;
+    return false;
+  }
+
+  function findHeaderRowIndex(matrix) {
+    const limit = Math.min((matrix && matrix.length) || 0, 60);
+    for (let r = 0; r < limit; r++) {
+      const row = matrix[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        if (isTreeNoHeaderCell(row[c])) return r;
+      }
+    }
+    return -1;
+  }
+
+  function rowLooksLikeSubHeader(row) {
+    if (!row || !row.length) return false;
+    let hits = 0;
+    for (let i = 0; i < row.length; i++) {
+      const n = normHeader(row[i]);
+      if (!n) continue;
+      if (/scientific|chinese name|中文名|height\s*\(|spread\s*\(|dbh|胸徑|胸径|高度|冠幅/.test(n)) hits++;
+    }
+    return hits >= 2;
+  }
+
+  function mergeHeaderPair(top, sub) {
+    const max = Math.max(top.length, sub ? sub.length : 0);
+    const headers = [];
+    const used = {};
+    for (let i = 0; i < max; i++) {
+      const a = cleanHeaderCell(top[i]);
+      const b = sub ? cleanHeaderCell(sub[i]) : "";
+      let name;
+      if (a && b) {
+        const an = normHeader(a);
+        const bn = normHeader(b);
+        // Group parents (Species / Tree Size) → prefer detailed sub-label
+        if (an === "species" || an === "tree size" || an === "size" || an === "樹種" || an === "树种") {
+          name = b;
+        } else if (/scientific|chinese name|中文名|^height|^spread|^dbh|胸徑|胸径/.test(bn)) {
+          name = b;
+        } else if (b.length > 48 && a.length <= 40) {
+          // Sub-row is a long legend / enum — keep the short top label
+          name = a;
+        } else if (an === bn) {
+          name = a;
+        } else {
+          name = a;
+        }
+      } else {
+        name = a || b || ("col" + i);
+      }
+      let unique = name;
+      let n = 2;
+      while (used[normHeader(unique)]) {
+        unique = name + " (" + n + ")";
+        n++;
+      }
+      used[normHeader(unique)] = true;
+      headers.push(unique);
+    }
+    return headers;
+  }
+
+  /** Convert AOA matrix → objects; detect Tree No. header (not title row 0). */
+  function matrixToObjects(matrix) {
+    if (!matrix || !matrix.length) return [];
+    let headerIdx = findHeaderRowIndex(matrix);
+    let headers;
+    let dataStart;
+    if (headerIdx >= 0) {
+      const top = matrix[headerIdx] || [];
+      const next = matrix[headerIdx + 1] || [];
+      if (rowLooksLikeSubHeader(next)) {
+        headers = mergeHeaderPair(top, next);
+        dataStart = headerIdx + 2;
+      } else {
+        headers = mergeHeaderPair(top, null);
+        dataStart = headerIdx + 1;
+      }
+    } else {
+      // Fallback: first non-empty row as header
+      headerIdx = 0;
+      while (headerIdx < matrix.length) {
+        const row = matrix[headerIdx] || [];
+        if (row.some((c) => cleanHeaderCell(c) !== "")) break;
+        headerIdx++;
+      }
+      if (headerIdx >= matrix.length) return [];
+      headers = mergeHeaderPair(matrix[headerIdx] || [], null);
+      dataStart = headerIdx + 1;
+    }
     const out = [];
-    for (let r = 1; r < rows.length; r++) {
-      const cells = rows[r];
-      if (!cells || !cells.some((c) => String(c || "").trim() !== "")) continue;
+    for (let r = dataStart; r < matrix.length; r++) {
+      const cells = matrix[r] || [];
+      if (!cells.some((c) => cleanHeaderCell(c) !== "")) continue;
       const obj = {};
-      headers.forEach((h, i) => { obj[h || ("col" + i)] = cells[i] != null ? cells[i] : ""; });
+      headers.forEach((h, i) => {
+        obj[h] = cells[i] != null ? cells[i] : "";
+      });
       out.push(obj);
     }
     return out;
@@ -944,7 +1053,8 @@
 
   function sheetRowsToObjects(sheet) {
     if (typeof XLSX === "undefined") throw new Error("SheetJS (XLSX) not loaded");
-    return XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+    return matrixToObjects(matrix);
   }
 
   async function readTableFile(file) {
@@ -957,7 +1067,8 @@
       throw new Error("Excel 解析庫未載入（vendor/xlsx.full.min.js）");
     }
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
+    // type:array supports both .xlsx and legacy .xls (BIFF)
+    const wb = XLSX.read(buf, { type: "array", cellDates: true });
     const sheetName = wb.SheetNames[0];
     if (!sheetName) throw new Error("Excel 沒有工作表");
     return sheetRowsToObjects(wb.Sheets[sheetName]);
@@ -1155,6 +1266,7 @@
       throw new Error("找不到樹木編號欄。現有欄名：" + (headers.map((h) => stripBom(h).trim() || "(空白)").join("、") || "（無）"));
     }
     const speciesCol = mapping.Species || findCol(headers, SPECIES_HINTS);
+    const chineseCol = findCol(headers, CHINESE_NAME_HINTS);
     const dbhCol = mapping.DBH || findCol(headers, DBH_HINTS);
     const heightCol = mapping.Height || findCol(headers, HEIGHT_HINTS);
     const spreadCol = mapping.Spread || findCol(headers, SPREAD_HINTS);
@@ -1182,9 +1294,19 @@
         if (v == null || v === "") return;
         props[h] = typeof v === "string" ? v.trim() : v;
       });
-      // Canonical keys for media matching / UI
+      // Canonical keys for media matching / UI (same fields the Excel-style list reads)
       props["Tree ID"] = id;
       renameNice(props, speciesCol, "Species");
+      // Optionally append Chinese Name → Species display "Scientific Chinese"
+      if (chineseCol && chineseCol !== speciesCol) {
+        const cnRaw = row[chineseCol];
+        const cn = cnRaw == null ? "" : String(cnRaw).trim();
+        if (cn) {
+          const sci = props.Species != null ? String(props.Species).trim() : "";
+          if (!sci) props.Species = cn;
+          else if (sci.indexOf(cn) < 0) props.Species = sci + " " + cn;
+        }
+      }
       renameNice(props, dbhCol, "DBH");
       renameNice(props, heightCol, "Height");
       renameNice(props, spreadCol, "Spread");
@@ -1192,6 +1314,9 @@
       renameNice(props, recommendCol, "Recommendation");
       renameNice(props, defectCol, "Defect");
       renameNice(props, locCol, "Location");
+      // Also bind short aliases some UIs read
+      if (props.Height != null && props.Height !== "" && props.H == null) props.H = props.Height;
+      if (props.Spread != null && props.Spread !== "" && props.S == null) props.S = props.Spread;
       // Ensure metrics / remarks / recommendation exist for attrs card (empty editable)
       if (!Object.prototype.hasOwnProperty.call(props, "Species")) props.Species = "";
       if (!Object.prototype.hasOwnProperty.call(props, "DBH")) props.DBH = "";
@@ -1645,8 +1770,11 @@
         z.y = viewer.scrollTop;
       }
 
-      const resetBtn = $("map-ref-zoom-reset");
-      if (resetBtn) resetBtn.textContent = scale <= 1.01 ? "1×" : (Math.round(scale * 10) / 10) + "×";
+      const readout = $("map-ref-zoom-level");
+      if (readout) {
+        readout.textContent = (Math.round(scale * 10) / 10) + "×";
+        readout.hidden = scale <= 1.01;
+      }
       syncAnnotLayerToContent();
     } finally {
       state._mapRefZoomApplying = false;
