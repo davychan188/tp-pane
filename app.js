@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v97: hide tree ID labels during Leaflet zoom; restore after zoom settles. v96: GPKG labels ON + hard-cap + chunked apply.
+   v98: sidebar above map-ref PDF when ☰ open. v97: hide tree ID labels during Leaflet zoom; restore after zoom settles. v96: GPKG labels ON + hard-cap + chunked apply.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -3184,7 +3184,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=97").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=98").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

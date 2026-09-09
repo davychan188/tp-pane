@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v97: hide labels while map zooming (.tp-map-zooming). v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -711,7 +711,8 @@ body.table-collapsed .status { bottom: 12px; }
 
   .sidebar {
     position: fixed;
-    z-index: 800;
+    /* Above map-ref PDF (z=5) and status (900); below topbar (1200) */
+    z-index: 1100;
     top: 0;
     left: 0;
     width: min(88vw, 360px);
@@ -730,7 +731,7 @@ body.table-collapsed .status { bottom: 12px; }
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.45);
-    z-index: 750;
+    z-index: 1050;
   }
   .backdrop[hidden] { display: none; }
 
@@ -1913,7 +1914,8 @@ body.media-layout .map-restore-hint,
 .map-ref-panel {
   grid-area: map;
   position: relative;
-  z-index: 800;
+  /* Below topbar (1200) and mobile sidebar/menu (1100); only need to cover Leaflet #map */
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-self: stretch;
