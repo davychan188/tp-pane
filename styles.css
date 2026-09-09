@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1286,7 +1286,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v87: remove map/media export hints. v86: map crop + multi-sheet. v85: document pinch locked. v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
+/* v88: 加樹 short-tap place (JS). v87: remove map/media export hints. v86: map crop + multi-sheet. v85: document pinch locked. v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
 .media-nums {
   display: none !important;
 }

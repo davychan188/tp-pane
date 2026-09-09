@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -3651,9 +3651,27 @@
     function finishDraw(e) {
       const g = gesture;
       const pts = simplifyPath(g && g.points ? g.points : null) || normalizePath(g && g.points);
+      const travel = (g && isFinite(g.startX) && isFinite(g.startY))
+        ? Math.hypot(e.clientX - g.startX, e.clientY - g.startY)
+        : 0;
       clearPreview();
       try { viewer.releasePointerCapture(e.pointerId); } catch (_) {}
       endGesture();
+      // v88: short tap in 加樹 mode → place tree (draw must not steal tap-to-add)
+      const isShortTap = travel <= MOVE_CANCEL_PX && (!pts || pts.length < 3);
+      if (isShortTap && state.annotateMode) {
+        suppressClickUntil = Date.now() + 450;
+        const pct = pctFromClient(e.clientX, e.clientY);
+        if (!pct) {
+          setImportStatus("無法加樹：座標無效", "warn");
+          return;
+        }
+        const usePts = (pts && pts.length) ? pts : [{ x: pct.x, y: pct.y }];
+        const c = pathCentroid(usePts) || pct;
+        beginPlace({ x: c.x, y: c.y, path: usePts, lat: null, lng: null, source: "map-ref" });
+        if (state.idMode !== "manual") renderAnnotOverlay();
+        return;
+      }
       suppressClickUntil = Date.now() + 450;
       if (!pts || pts.length < 2) return; // ignore tiny dots — not ink
       state.drawStrokes = state.drawStrokes || [];
@@ -3740,10 +3758,31 @@
       const pct = pctFromClient(e.clientX, e.clientY);
       const isPenLike = e.pointerType === "pen" || e.pointerType === "mouse";
 
-      // Pen / mouse: freehand draw (primary)
+      // Pen / mouse: when 加樹 on, pending short-tap places; move → freehand ink.
+      // When 加樹 off, freehand draw immediately (draw-only).
       if (isPenLike) {
         e.preventDefault();
         e.stopPropagation();
+        if (state.annotateMode) {
+          gesture = {
+            pointerId: e.pointerId,
+            mode: "pen-pending",
+            marker: null,
+            treeId: null,
+            startX: e.clientX,
+            startY: e.clientY,
+            longTimer: null,
+            dragging: false,
+            suppressed: false,
+            place: true,
+            panning: false,
+            ox: 0,
+            oy: 0,
+            points: pct ? [pct] : []
+          };
+          try { viewer.setPointerCapture(e.pointerId); } catch (_) {}
+          return;
+        }
         startDraw(e, pct);
         return;
       }
@@ -3794,11 +3833,11 @@
         return;
       }
 
-      if (gesture.mode === "touch-pending" && !gesture.dragging) {
+      if ((gesture.mode === "touch-pending" || gesture.mode === "pen-pending") && !gesture.dragging) {
         if (dist > MOVE_CANCEL_PX) {
           gesture.suppressed = true;
-          if (state.mapRefZoom.scale > 1.01) {
-            // Finger pan when zoomed — never create a tree from a pan
+          // Finger pan when zoomed — never create a tree from a pan (touch only)
+          if (gesture.mode === "touch-pending" && state.mapRefZoom.scale > 1.01) {
             gesture.panning = true;
             gesture.place = false;
             gesture.mode = "pan";
@@ -3810,7 +3849,7 @@
             applyMapRefZoom();
             return;
           }
-          // Unzoomed finger stroke → freehand draw
+          // Moved past tap threshold → freehand draw (ink only; no tree)
           gesture.mode = "draw";
           gesture.place = false;
           const ink = currentInkPrefs();
@@ -3823,7 +3862,7 @@
           e.preventDefault();
           return;
         }
-        // Track early samples for a possible short freehand
+        // Track early samples for a possible short freehand / place centroid
         const pct = pctFromClient(e.clientX, e.clientY);
         if (pct && gesture.points) {
           const last = gesture.points[gesture.points.length - 1];
@@ -3891,11 +3930,14 @@
         selectTreeFromList(treeId);
         return;
       }
-      // Light touch tap still places (single-point / tiny mark)
-      if (place && state.annotateMode && e.pointerType === "touch") {
+      // Short tap places tree in 加樹 mode (touch / pen / mouse pending)
+      if (place && state.annotateMode) {
         suppressClickUntil = Date.now() + 450;
         const pct = pctFromClient(e.clientX, e.clientY);
-        if (!pct) return;
+        if (!pct) {
+          setImportStatus("無法加樹：座標無效", "warn");
+          return;
+        }
         const pts = (touchPts && touchPts.length) ? simplifyPath(touchPts) : [{ x: pct.x, y: pct.y }];
         const c = pathCentroid(pts) || pct;
         beginPlace({ x: c.x, y: c.y, path: pts, lat: null, lng: null, source: "map-ref" });
