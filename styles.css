@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -548,6 +548,29 @@ table.attr td.editable input {
   padding: 4px 6px;
   font: inherit;
 }
+
+/* v95: attribute table pagination (avoid 500-row DOM on iPad) */
+.table-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.table-page-info {
+  font-size: 12px;
+  color: var(--muted);
+}
+.table-page-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .table-wrap {
   flex: 1;
   min-width: 0;

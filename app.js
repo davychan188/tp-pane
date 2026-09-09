@@ -1,4 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
+   v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
 
@@ -6,6 +7,12 @@
   "use strict";
 
   const MAX_FEATURES_DEFAULT = 25000;
+  /** Above this, permanent ID labels are culled to the map viewport (iPad DOM lag). */
+  const LABEL_DOM_SOFT_CAP = 100;
+  /** Attribute catalog rows per page (full rebuild of 500+ rows freezes iPad). */
+  const TABLE_PAGE_SIZE = 80;
+  /** Dense GPKG labels stay off until zoomed in; annotate overlay labels are separate. */
+  const DEFAULT_LABEL_MIN_ZOOM = 16;
   const COLORS = [
     "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#14b8a6"
@@ -23,7 +30,9 @@
     featureLimit: MAX_FEATURES_DEFAULT,
     showLabels: true,
     labelField: "",
-    labelMinZoom: 0,
+    labelMinZoom: DEFAULT_LABEL_MIN_ZOOM,
+    tablePage: 0,
+    tablePageLayerKey: null,
     markerSize: 4,
     labelSize: 9,
     labelFrame: true,
@@ -823,39 +832,105 @@
   }
   syncMeasureFont();
 
-  function bindFeatureLabel(layer) {
+  function clearFeatureLabel(layer) {
     if (!layer) return;
+    if (!layer._tpLabelOn) {
+      try { if (layer.unbindTooltip) layer.unbindTooltip(); } catch (_) {}
+      return;
+    }
     try { if (layer.unbindTooltip) layer.unbindTooltip(); } catch (_) {}
-    if (!labelsShouldShow()) return;
+    layer._tpLabelOn = false;
+    layer._tpLabelText = "";
+  }
+
+  function bindFeatureLabel(layer, force) {
+    if (!layer) return;
+    if (!labelsShouldShow()) {
+      clearFeatureLabel(layer);
+      return;
+    }
     const text = labelText(layer.feature, state.labelField);
-    if (!text) return;
+    if (!text) {
+      clearFeatureLabel(layer);
+      return;
+    }
+    const offset = Math.max(6, currentMarkerRadius() + 3);
+    const cls = "map-id-label" + (state.labelFrame ? "" : " no-frame");
+    if (!force && layer._tpLabelOn && layer._tpLabelText === text &&
+        layer._tpLabelOffset === offset && layer._tpLabelCls === cls) {
+      return;
+    }
+    clearFeatureLabel(layer);
     layer.bindTooltip(escapeHtml(text), {
       permanent: true,
       direction: "right",
-      offset: [Math.max(6, currentMarkerRadius() + 3), 0],
-      className: "map-id-label" + (state.labelFrame ? "" : " no-frame"),
+      offset: [offset, 0],
+      className: cls,
       opacity: 1,
       sticky: false
     });
+    layer._tpLabelOn = true;
+    layer._tpLabelText = text;
+    layer._tpLabelOffset = offset;
+    layer._tpLabelCls = cls;
   }
 
-  function applyLabelsToLayer(ly) {
+  function applyLabelsToLayer(ly, force) {
     if (!ly || !ly.leafletLayer || ly.kind !== "feature") return;
-    ly.leafletLayer.eachLayer((l) => bindFeatureLabel(l));
+    const show = labelsShouldShow();
+    const count = ly.loaded || (ly.features && ly.features.length) || 0;
+    const useCull = count > LABEL_DOM_SOFT_CAP;
+    let bounds = null;
+    if (show && useCull) {
+      try { bounds = map.getBounds().pad(0.2); } catch (_) {}
+    }
+    ly.leafletLayer.eachLayer((l) => {
+      let want = show;
+      if (want && useCull && bounds && typeof l.getLatLng === "function") {
+        want = bounds.contains(l.getLatLng());
+      }
+      if (!want) {
+        clearFeatureLabel(l);
+        return;
+      }
+      bindFeatureLabel(l, !!force);
+    });
   }
 
   function applyAllLabels() {
-    state.files.forEach((f) => f.layers.forEach(applyLabelsToLayer));
+    state.files.forEach((f) => f.layers.forEach((ly) => applyLabelsToLayer(ly, true)));
   }
 
-  function scheduleLabelUpdate() {}
+  let labelUpdateTimer = null;
+  function scheduleLabelUpdate() {
+    if (labelUpdateTimer) clearTimeout(labelUpdateTimer);
+    labelUpdateTimer = setTimeout(function () {
+      labelUpdateTimer = null;
+      state.files.forEach((f) => f.layers.forEach((ly) => applyLabelsToLayer(ly, false)));
+    }, IS_TOUCH ? 200 : 90);
+  }
+
+  function indexLayerMarkers(ly) {
+    if (!ly || !ly.leafletLayer) return;
+    const byFeat = new Map();
+    ly.leafletLayer.eachLayer((l) => {
+      if (l && l.feature) {
+        byFeat.set(l.feature, l);
+        l._tpParentLayer = ly;
+      }
+    });
+    ly._featMarker = byFeat;
+  }
 
   function parentLayerOf(marker) {
+    if (!marker) return null;
+    if (marker._tpParentLayer) return marker._tpParentLayer;
     let found = null;
     state.files.forEach((f) => {
       f.layers.forEach((ly) => {
         if (ly.leafletLayer && ly.leafletLayer.hasLayer && ly.leafletLayer.hasLayer(marker)) {
           found = ly;
+          marker._tpParentLayer = ly;
         }
       });
     });
@@ -1001,8 +1076,32 @@
   function highlightCatalogRowByIndex(i) {
     const wrap = $("table-wrap");
     if (!wrap) return;
-    wrap.querySelectorAll("tr.selected-row").forEach((tr) => tr.classList.remove("selected-row"));
-    const tr = wrap.querySelector("tr[data-i='" + i + "']");
+    let tr = wrap.querySelector("tr[data-i='" + i + "']");
+    if (!tr && state.selectedLayerKey) {
+      // Row may be on another page after sort — jump page then re-query
+      const found = findLayer(state.selectedLayerKey);
+      const layer = found && found.layer;
+      if (layer && layer.features) {
+        const col = state.tableSortCol;
+        const dir = state.tableSortDir || 1;
+        const idxs = layer.features.map((_, n) => n);
+        if (col) {
+          idxs.sort((ia, ib) => {
+            const av = String(((layer.features[ia].properties || {})[col]) || "");
+            const bv = String(((layer.features[ib].properties || {})[col]) || "");
+            const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+            return dir * (cmp || (ia - ib));
+          });
+        }
+        const pos = idxs.indexOf(i);
+        if (pos >= 0) {
+          state.tablePage = Math.floor(pos / TABLE_PAGE_SIZE);
+          renderTable(layer);
+          tr = wrap.querySelector("tr[data-i='" + i + "']");
+        }
+      }
+    }
+    wrap.querySelectorAll("tr.selected-row").forEach((row) => row.classList.remove("selected-row"));
     if (tr) {
       tr.classList.add("selected-row");
       tr.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1107,7 +1206,11 @@
   }
 
   function findMarkerForFeature(layer, feat) {
-    if (!layer || !layer.leafletLayer || !feat) return null;
+    if (!layer || !feat) return null;
+    if (layer._featMarker && layer._featMarker.has(feat)) {
+      return layer._featMarker.get(feat) || null;
+    }
+    if (!layer.leafletLayer) return null;
     let found = null;
     layer.leafletLayer.eachLayer((l) => {
       if (found || !l.feature) return;
@@ -1353,6 +1456,8 @@
       refreshLabelFieldOptions();
       applyAllLabels();
       renderSidebar();
+      const firstFeat = rec.layers.find((l) => l.kind === "feature");
+      if (firstFeat) selectLayer(firstFeat.key);
 
       const firstVisible = rec.layers.find((l) => l.leafletLayer);
       if (firstVisible && firstVisible.leafletLayer.getBounds && firstVisible.leafletLayer.getBounds().isValid()) {
@@ -1362,9 +1467,10 @@
       const nFeat = featureTables.length;
       const nTile = tileTables.length;
       if (!opts.fromStore) persistOpenedFile("gpkg", fileId, file, { bytes: bytes });
+      const dense = rec.layers.some((ly) => ly.kind === "feature" && (ly.loaded || 0) > LABEL_DOM_SOFT_CAP);
       setStatus(
-        "Loaded " + file.name + " — " + nFeat + " vector layer" + (nFeat === 1 ? "" : "s") +
-          ", " + nTile + " tile layer" + (nTile === 1 ? "" : "s") + ".",
+        "已開啟 " + file.name + " — " + nFeat + " 向量層、" + nTile + " 圖磚層。" +
+          (dense ? " 密集圖層已關閉地圖編號以保持流暢（側欄可開「顯示編號」；縮放後僅顯示視窗內）。" : ""),
         "ok"
       );
 
@@ -1544,7 +1650,7 @@
         style: () => styleFor(color, geomType),
         pointToLayer: pointToLayer(color),
         onEachFeature: (feat, lyr) => {
-          bindPopup(lyr, feat, tableName);
+          // v95: skip eager bindPopup (hundreds of HTML strings) — attrs via panel
           attachEditHandlers(lyr);
         }
       }
@@ -1569,8 +1675,18 @@
       leafletLayer,
       visible: true
     };
+    indexLayerMarkers(layer);
     if (!state.labelField) state.labelField = guessLabelField(columns);
-    applyLabelsToLayer(layer);
+    // Dense GPKG: keep permanent DOM labels off by default (user can re-enable 顯示編號)
+    if (features.length > LABEL_DOM_SOFT_CAP) {
+      if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
+      if (state.showLabels) {
+        state.showLabels = false;
+        const ck = $("show-labels");
+        if (ck) ck.checked = false;
+      }
+    }
+    applyLabelsToLayer(layer, true);
     return layer;
   }
 
@@ -1806,6 +1922,10 @@
   }
 
   function selectLayer(key) {
+    if (state.selectedLayerKey !== key) {
+      state.tablePage = 0;
+      state.tablePageLayerKey = key;
+    }
     state.selectedLayerKey = key;
     renderSidebar();
     const found = findLayer(key);
@@ -1821,8 +1941,10 @@
       wrap.innerHTML = '<p class="empty-hint">Select a vector layer to inspect attributes.</p>';
       return;
     }
-    title.textContent = layer.tableName + " — " + layer.loaded + " row" + (layer.loaded === 1 ? "" : "s") +
-      (layer.truncated ? " of " + layer.count + " (truncated)" : "");
+    if (state.tablePageLayerKey !== layer.key) {
+      state.tablePage = 0;
+      state.tablePageLayerKey = layer.key;
+    }
 
     const colsSet = new Set();
     layer.features.forEach((ft) => {
@@ -1862,9 +1984,31 @@
         return dir * (cmp || (ia - ib));
       });
     }
-    const maxRows = Math.min(idxs.length, 500);
 
-    let html = "<table class='attr'><thead><tr><th class='ck-col'>✓</th><th>#</th>";
+    const pageSize = TABLE_PAGE_SIZE;
+    const total = idxs.length;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    if (state.tablePage >= pageCount) state.tablePage = pageCount - 1;
+    if (state.tablePage < 0) state.tablePage = 0;
+    const page = state.tablePage;
+    const start = page * pageSize;
+    const end = Math.min(total, start + pageSize);
+    const selectedFeat = state.selectedMarker && state.selectedMarker.feature;
+
+    title.textContent = layer.tableName + " — " + layer.loaded + " 列" +
+      (layer.truncated ? "／共 " + layer.count + "（已截斷）" : "") +
+      " · 第 " + (page + 1) + "/" + pageCount + " 頁";
+
+    let html = "<div class='table-pager' role='navigation' aria-label='屬性表分頁'>";
+    html += "<button type='button' class='btn table-page-btn' data-page-act='prev'" +
+      (page <= 0 ? " disabled" : "") + ">上一頁</button>";
+    html += "<span class='table-page-info'>顯示 " + (total ? (start + 1) : 0) + "–" + end +
+      "／" + total + "</span>";
+    html += "<button type='button' class='btn table-page-btn' data-page-act='next'" +
+      (page >= pageCount - 1 ? " disabled" : "") + ">下一頁</button>";
+    html += "</div>";
+
+    html += "<table class='attr'><thead><tr><th class='ck-col'>✓</th><th>#</th>";
     cols.forEach((c) => {
       const on = c === state.tableSortCol;
       const arrow = on ? (state.tableSortDir < 0 ? " ↓" : " ↑") : "";
@@ -1872,14 +2016,15 @@
         escapeHtml(c) + arrow + "</th>";
     });
     html += "</tr></thead><tbody>";
-    for (let r = 0; r < maxRows; r++) {
+    for (let r = start; r < end; r++) {
       const i = idxs[r];
       const feat = layer.features[i];
       const p = feat.properties || {};
-      const marker = findMarkerForFeature(layer, feat);
-      const inspected = !!(marker && marker.feature && isInspectedColor((marker.feature.properties || {})._editColor)) ||
-        isInspectedColor(p._editColor);
-      const onRow = !!(marker && state.selectedMarker === marker);
+      // Prefer property color — avoid O(n) marker scan per row
+      const inspected = isInspectedColor(p._editColor);
+      const onRow = !!(selectedFeat && (selectedFeat === feat ||
+        ((selectedFeat.properties || {})._origKey && p._origKey &&
+          (selectedFeat.properties || {})._origKey === p._origKey)));
       html += "<tr class='" + (inspected ? "inspected " : "") + (onRow ? "selected-row" : "") + "' data-i='" + i + "'>";
       html += "<td class='ck-col'><input type='checkbox' class='inspect-ck' data-i='" + i + "'" +
         (inspected ? " checked" : "") + " /></td>";
@@ -1892,10 +2037,8 @@
       html += "</tr>";
     }
     html += "</tbody></table>";
-    if (layer.features.length > maxRows) {
-      html += '<p class="empty-hint">Showing first ' + maxRows + " rows in the table.</p>";
-    }
     wrap.innerHTML = html;
+
     wrap.onchange = function (e) {
       const ck = e.target && e.target.classList && e.target.classList.contains("inspect-ck") ? e.target : null;
       if (!ck) return;
@@ -1922,6 +2065,14 @@
       if (row) row.classList.toggle("inspected", ck.checked);
     };
     wrap.onclick = function (e) {
+      const pageBtn = e.target && e.target.closest ? e.target.closest("[data-page-act]") : null;
+      if (pageBtn && !pageBtn.disabled) {
+        const act = pageBtn.getAttribute("data-page-act");
+        if (act === "prev") state.tablePage = Math.max(0, state.tablePage - 1);
+        else if (act === "next") state.tablePage = state.tablePage + 1;
+        renderTable(layer);
+        return;
+      }
       const th = e.target && e.target.closest ? e.target.closest("th.sortable") : null;
       if (th) {
         const col = th.getAttribute("data-col");
@@ -1931,6 +2082,7 @@
           state.tableSortCol = col;
           state.tableSortDir = 1;
         }
+        state.tablePage = 0;
         renderTable(layer);
         return;
       }
@@ -1963,6 +2115,7 @@
       lastCellTap = { el: td, t: now };
     }, { passive: false });
   }
+
 
   function fillColumnMenu(allCols) {
     const menu = $("col-menu");
@@ -2098,7 +2251,6 @@
           style: (feat) => styleFor((feat.properties && feat.properties._editColor) || color, geomType),
           pointToLayer: pointToLayer(color),
           onEachFeature: (feat, lyr) => {
-            bindPopup(lyr, feat, tableName);
             attachEditHandlers(lyr);
           }
         }
@@ -2122,10 +2274,20 @@
         leafletLayer: leafletLayer,
         visible: true
       });
+      indexLayerMarkers(rec.layers[0]);
+      if (features.length > LABEL_DOM_SOFT_CAP) {
+        if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
+        if (state.showLabels) {
+          state.showLabels = false;
+          const ck = $("show-labels");
+          if (ck) ck.checked = false;
+        }
+      }
       state.files.push(rec);
       refreshLabelFieldOptions();
       applyAllLabels();
       renderSidebar();
+      selectLayer(rec.layers[0].key);
       if (leafletLayer.getBounds && leafletLayer.getBounds().isValid()) {
         map.fitBounds(leafletLayer.getBounds(), { padding: [28, 28], maxZoom: 16 });
       }
@@ -2892,6 +3054,7 @@
     if (zoomSizeTimer) clearTimeout(zoomSizeTimer);
     zoomSizeTimer = setTimeout(function () {
       applyMarkerRadii();
+      scheduleLabelUpdate();
       setTooltipPaneHidden(false);
       const wrap = $("table-wrap");
       if (wrap && isCatalogOpen()) wrap.style.display = "";
@@ -2930,7 +3093,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=94").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=95").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
@@ -3016,15 +3179,22 @@
     // Remove previous excel-sourced layers to avoid duplicates
     state.files.filter((f) => f.fromExcel).slice().forEach((f) => removeFile(f.id));
 
+    // v95: if a GPKG/GeoJSON point layer is already on the map, keep Excel as list-only
+    // so we do not double-draw hundreds of markers.
+    const hasMapPoints = state.files.some((f) => !f.fromExcel && (f.layers || []).some((ly) =>
+      ly && ly.kind === "feature" && ly.visible && ly.leafletLayer && (ly.loaded || 0) > 0 &&
+      String(ly.geomType || "").toLowerCase().indexOf("point") >= 0
+    ));
+    const drawMapped = mapped.length && !hasMapPoints;
+
     let leafletLayer = null;
-    if (mapped.length) {
+    if (drawMapped) {
       leafletLayer = L.geoJSON(
         { type: "FeatureCollection", features: mapped },
         {
           style: (feat) => styleFor((feat.properties && feat.properties._editColor) || color, geomType),
           pointToLayer: pointToLayer(color),
           onEachFeature: (feat, lyr) => {
-            bindPopup(lyr, feat, tableName);
             attachEditHandlers(lyr);
           }
         }
@@ -3053,6 +3223,15 @@
       leafletLayer: leafletLayer,
       visible: true
     });
+    indexLayerMarkers(rec.layers[0]);
+    if (drawMapped && mapped.length > LABEL_DOM_SOFT_CAP) {
+      if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
+      if (state.showLabels) {
+        state.showLabels = false;
+        const ck = $("show-labels");
+        if (ck) ck.checked = false;
+      }
+    }
     state.files.push(rec);
     refreshLabelFieldOptions();
     // Prefer Tree ID label field when present
@@ -3064,7 +3243,7 @@
     applyAllLabels();
     renderSidebar();
     selectLayer(rec.layers[0].key);
-    if (leafletLayer && leafletLayer.getBounds && mapped.length) {
+    if (leafletLayer && leafletLayer.getBounds && drawMapped) {
       try {
         const b = leafletLayer.getBounds();
         if (b && b.isValid()) map.fitBounds(b, { padding: [28, 28], maxZoom: 16 });
@@ -3073,11 +3252,11 @@
     if (window.GpkgImport && window.GpkgImport.updateMapRefVisibility) {
       window.GpkgImport.updateMapRefVisibility();
     }
-    setStatus(
-      "Loaded " + features.length + " trees from " + displayName +
-      (mapped.length ? (" (" + mapped.length + " on map)") : " (list only — no coordinates)"),
-      "ok"
-    );
+    let mapNote = "（僅清單 — 無座標）";
+    if (drawMapped) mapNote = "（地圖 " + mapped.length + " 點）";
+    else if (hasMapPoints && mapped.length) mapNote = "（僅清單 — 已有 GPKG 地圖點，避免重複繪製）";
+    else if (mapped.length) mapNote = "（僅清單）";
+    setStatus("已載入 " + features.length + " 棵樹自 " + displayName + " " + mapNote, "ok");
   }
 
   function selectTreeById(treeId, props) {
