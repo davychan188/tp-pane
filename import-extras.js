@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -2629,10 +2629,33 @@
     return s;
   }
 
+  /** True for trees placed via 加樹 / annotate (not Excel/CSV import). */
+  function isAnnotatePlacedTree(t) {
+    if (!t) return false;
+    if (t.annot) return true;
+    const propSrc = String((t.props && t.props.Source) || "").trim().toLowerCase();
+    if (propSrc === "annotate") return true;
+    const src = String(t.source || "").trim().toLowerCase();
+    if (src === "annotate" || src === "map-ref" || src === "leaflet") return true;
+    return false;
+  }
+
+  /**
+   * Next auto Tree ID: first free gap among annotate-placed /^T(\d+)$/i only
+   * (props.Source===annotate, t.annot, or t.source annotate|map-ref|leaflet).
+   * Ignores CPT001 and import-sourced rows even if they look like T#.
+   */
   function nextAutoId() {
-    const used = existingIdSet();
+    const re = /^T(\d+)$/i;
+    const usedAnnot = Object.create(null);
+    state.trees.forEach((t) => {
+      if (!isAnnotatePlacedTree(t)) return;
+      const m = re.exec(String(t.id || "").trim());
+      if (!m) return;
+      usedAnnot[parseInt(m[1], 10)] = true;
+    });
     let n = 1;
-    while (used["T" + n]) n += 1;
+    while (usedAnnot[n]) n += 1;
     return "T" + n;
   }
 
@@ -2674,10 +2697,11 @@
     ensureLeafletAnnotBinding();
     updateFloatBarVisibility(document.body.classList.contains("has-map-ref"));
     if (state.annotateMode) {
+      const nextHint = state.idMode === "auto" ? ("下一個 " + nextAutoId() + " · ") : "";
       setImportStatus(
         state.idMode === "manual"
           ? "加樹模式（手動編號）：短點地圖放置後輸入編號；長按標記可拖移。自由畫＝純墨跡，不加樹"
-          : "加樹模式（自動編號）：短點地圖 → T1、T2…；長按標記可拖移。自由畫＝純墨跡，不加樹",
+          : "加樹模式（自動編號）：" + nextHint + "短點地圖 → T1、T2…；長按標記可拖移。自由畫＝純墨跡，不加樹",
         "ok"
       );
     } else {
@@ -2877,7 +2901,7 @@
     renderTreeList();
     selectTreeFromList(id);
     schedulePersist();
-    setImportStatus("已加樹 " + id + (x != null ? (" · x " + fmtXy(x) + "% y " + fmtXy(y) + "%") : ""), "ok");
+    setImportStatus("已加 " + id + (x != null ? (" · x " + fmtXy(x) + "% y " + fmtXy(y) + "%") : ""), "ok");
     return true;
   }
 
