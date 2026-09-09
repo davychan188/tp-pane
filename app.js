@@ -1,4 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
+   v96: labels stay ON by default; hard-cap + chunked rAF apply (no freeze on 顯示編號).
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -9,10 +10,14 @@
   const MAX_FEATURES_DEFAULT = 25000;
   /** Above this, permanent ID labels are culled to the map viewport (iPad DOM lag). */
   const LABEL_DOM_SOFT_CAP = 100;
+  /** Max permanent tooltip labels bound on screen at once (nearest in viewport). */
+  const LABEL_HARD_CAP = 72;
+  /** Markers processed per animation frame when applying labels. */
+  const LABEL_CHUNK = 32;
   /** Attribute catalog rows per page (full rebuild of 500+ rows freezes iPad). */
   const TABLE_PAGE_SIZE = 80;
-  /** Dense GPKG labels stay off until zoomed in; annotate overlay labels are separate. */
-  const DEFAULT_LABEL_MIN_ZOOM = 16;
+  /** Min zoom for GPKG/GeoJSON ID labels; cull + hard-cap keep it smooth after fitBounds. */
+  const DEFAULT_LABEL_MIN_ZOOM = 14;
   const COLORS = [
     "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#14b8a6"
@@ -875,38 +880,119 @@
     layer._tpLabelCls = cls;
   }
 
-  function applyLabelsToLayer(ly, force) {
-    if (!ly || !ly.leafletLayer || ly.kind !== "feature") return;
-    const show = labelsShouldShow();
-    const count = ly.loaded || (ly.features && ly.features.length) || 0;
-    const useCull = count > LABEL_DOM_SOFT_CAP;
-    let bounds = null;
-    if (show && useCull) {
-      try { bounds = map.getBounds().pad(0.2); } catch (_) {}
+  let labelUpdateTimer = null;
+  let labelChunkRaf = null;
+  let labelApplyGen = 0;
+
+  function cancelLabelApply() {
+    if (labelUpdateTimer) {
+      clearTimeout(labelUpdateTimer);
+      labelUpdateTimer = null;
     }
-    ly.leafletLayer.eachLayer((l) => {
-      let want = show;
-      if (want && useCull && bounds && typeof l.getLatLng === "function") {
-        want = bounds.contains(l.getLatLng());
-      }
-      if (!want) {
-        clearFeatureLabel(l);
-        return;
-      }
-      bindFeatureLabel(l, !!force);
+    if (labelChunkRaf != null) {
+      cancelAnimationFrame(labelChunkRaf);
+      labelChunkRaf = null;
+    }
+    labelApplyGen += 1;
+  }
+
+  /** Build bind/clear work list; dense layers viewport-cull + hard-cap nearest N. */
+  function buildLabelWork(force) {
+    const work = [];
+    const show = labelsShouldShow();
+    let center = null;
+    try { center = map.getCenter(); } catch (_) {}
+    const candidates = [];
+
+    state.files.forEach((f) => {
+      f.layers.forEach((ly) => {
+        if (!ly || !ly.leafletLayer || ly.kind !== "feature" || !ly.visible) return;
+        const count = ly.loaded || (ly.features && ly.features.length) || 0;
+        const useCull = count > LABEL_DOM_SOFT_CAP;
+        let bounds = null;
+        if (show && useCull) {
+          try { bounds = map.getBounds().pad(0.2); } catch (_) {}
+        }
+        ly.leafletLayer.eachLayer((l) => {
+          if (!show) {
+            if (l._tpLabelOn) work.push({ layer: l, action: "clear" });
+            return;
+          }
+          const text = labelText(l.feature, state.labelField);
+          if (!text) {
+            if (l._tpLabelOn) work.push({ layer: l, action: "clear" });
+            return;
+          }
+          if (useCull) {
+            if (!bounds || typeof l.getLatLng !== "function" || !bounds.contains(l.getLatLng())) {
+              if (l._tpLabelOn) work.push({ layer: l, action: "clear" });
+              return;
+            }
+            const ll = l.getLatLng();
+            const dist = center && ll ? center.distanceTo(ll) : 0;
+            candidates.push({ layer: l, dist: dist, force: !!force });
+            return;
+          }
+          work.push({ layer: l, action: "bind", force: !!force });
+        });
+      });
     });
+
+    candidates.sort((a, b) => a.dist - b.dist);
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (i < LABEL_HARD_CAP) work.push({ layer: c.layer, action: "bind", force: c.force });
+      else if (c.layer._tpLabelOn) work.push({ layer: c.layer, action: "clear" });
+    }
+    return work;
+  }
+
+  function runLabelWork(work, gen) {
+    let i = 0;
+    function step() {
+      if (gen !== labelApplyGen) return;
+      const end = Math.min(i + LABEL_CHUNK, work.length);
+      for (; i < end; i++) {
+        const w = work[i];
+        if (w.action === "clear") clearFeatureLabel(w.layer);
+        else bindFeatureLabel(w.layer, !!w.force);
+      }
+      if (i < work.length) {
+        labelChunkRaf = requestAnimationFrame(step);
+      } else {
+        labelChunkRaf = null;
+      }
+    }
+    if (!work.length) return;
+    labelChunkRaf = requestAnimationFrame(step);
+  }
+
+  /** Start chunked label apply immediately (non-blocking). */
+  function startLabelApply(force) {
+    if (labelChunkRaf != null) {
+      cancelAnimationFrame(labelChunkRaf);
+      labelChunkRaf = null;
+    }
+    labelApplyGen += 1;
+    const gen = labelApplyGen;
+    const work = buildLabelWork(!!force);
+    runLabelWork(work, gen);
+  }
+
+  function applyLabelsToLayer(ly, force) {
+    // Single-layer path: fold into global chunked apply (hard-cap is map-wide).
+    startLabelApply(!!force);
   }
 
   function applyAllLabels() {
-    state.files.forEach((f) => f.layers.forEach((ly) => applyLabelsToLayer(ly, true)));
+    startLabelApply(true);
   }
 
-  let labelUpdateTimer = null;
   function scheduleLabelUpdate() {
     if (labelUpdateTimer) clearTimeout(labelUpdateTimer);
     labelUpdateTimer = setTimeout(function () {
       labelUpdateTimer = null;
-      state.files.forEach((f) => f.layers.forEach((ly) => applyLabelsToLayer(ly, false)));
+      startLabelApply(false);
     }, IS_TOUCH ? 200 : 90);
   }
 
@@ -1470,7 +1556,7 @@
       const dense = rec.layers.some((ly) => ly.kind === "feature" && (ly.loaded || 0) > LABEL_DOM_SOFT_CAP);
       setStatus(
         "已開啟 " + file.name + " — " + nFeat + " 向量層、" + nTile + " 圖磚層。" +
-          (dense ? " 密集圖層已關閉地圖編號以保持流暢（側欄可開「顯示編號」；縮放後僅顯示視窗內）。" : ""),
+          (dense ? " 密集圖層：編號僅顯示視窗內最近約 " + LABEL_HARD_CAP + " 個（側欄可關「顯示編號」）。" : ""),
         "ok"
       );
 
@@ -1677,16 +1763,13 @@
     };
     indexLayerMarkers(layer);
     if (!state.labelField) state.labelField = guessLabelField(columns);
-    // Dense GPKG: keep permanent DOM labels off by default (user can re-enable 顯示編號)
+    // Dense GPKG: keep 顯示編號 ON; cull + hard-cap + chunked apply keep UI smooth
     if (features.length > LABEL_DOM_SOFT_CAP) {
       if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
-      if (state.showLabels) {
-        state.showLabels = false;
-        const ck = $("show-labels");
-        if (ck) ck.checked = false;
-      }
     }
-    applyLabelsToLayer(layer, true);
+    const ckDense = $("show-labels");
+    if (ckDense) ckDense.checked = !!state.showLabels;
+    scheduleLabelUpdate();
     return layer;
   }
 
@@ -2277,15 +2360,12 @@
       indexLayerMarkers(rec.layers[0]);
       if (features.length > LABEL_DOM_SOFT_CAP) {
         if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
-        if (state.showLabels) {
-          state.showLabels = false;
-          const ck = $("show-labels");
-          if (ck) ck.checked = false;
-        }
       }
+      const ckGj = $("show-labels");
+      if (ckGj) ckGj.checked = !!state.showLabels;
       state.files.push(rec);
       refreshLabelFieldOptions();
-      applyAllLabels();
+      scheduleLabelUpdate();
       renderSidebar();
       selectLayer(rec.layers[0].key);
       if (leafletLayer.getBounds && leafletLayer.getBounds().isValid()) {
@@ -2982,7 +3062,8 @@
 
   $("show-labels").addEventListener("change", (e) => {
     state.showLabels = e.target.checked;
-    applyAllLabels();
+    // Chunked rAF apply — never sync-bind hundreds of permanent tooltips
+    startLabelApply(true);
   });
   if ($("label-frame")) {
     $("label-frame").checked = state.labelFrame;
@@ -3093,7 +3174,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=95").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=96").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
@@ -3226,12 +3307,9 @@
     indexLayerMarkers(rec.layers[0]);
     if (drawMapped && mapped.length > LABEL_DOM_SOFT_CAP) {
       if (state.labelMinZoom < DEFAULT_LABEL_MIN_ZOOM) state.labelMinZoom = DEFAULT_LABEL_MIN_ZOOM;
-      if (state.showLabels) {
-        state.showLabels = false;
-        const ck = $("show-labels");
-        if (ck) ck.checked = false;
-      }
     }
+    const ckXl = $("show-labels");
+    if (ckXl) ckXl.checked = !!state.showLabels;
     state.files.push(rec);
     refreshLabelFieldOptions();
     // Prefer Tree ID label field when present
@@ -3240,7 +3318,7 @@
       const sel = $("label-field");
       if (sel) sel.value = "Tree ID";
     }
-    applyAllLabels();
+    scheduleLabelUpdate();
     renderSidebar();
     selectLayer(rec.layers[0].key);
     if (leafletLayer && leafletLayer.getBounds && drawMapped) {
