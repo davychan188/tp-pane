@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v99: syncTreeListHighlight scrolls + fuzzy tree ID match from GPKG map tap. v98: GPKG sidebar above map-ref (styles). v97: hide annot labels during map-ref pinch zoom; GPKG zoom hide in app.js. v96: GPKG label UX in app.js. v95: GPKG lag fixes in app.js. v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -3553,9 +3553,31 @@
     viewer._annotPtrBound = true;
 
     const LONG_MS = 450;
-    const MOVE_CANCEL_PX = 14;
+    const MOVE_CANCEL_PX = 14;       // finger
+    const MOVE_CANCEL_PEN_PX = 44;   // Apple Pencil tip jitter / palm micro-move
+    const SHORT_TAP_MS = 420;        // brief pen contact still counts as tap-to-place
     let gesture = null;
     let suppressClickUntil = 0;
+
+    function moveCancelPx(g) {
+      const pt = (g && g.pointerType) || "";
+      return (pt === "pen" || pt === "mouse") ? MOVE_CANCEL_PEN_PX : MOVE_CANCEL_PX;
+    }
+
+    /** Path span in %-of-map units — tiny dots should not become ink in 加樹 mode. */
+    function pathSpanPct(pts) {
+      if (!pts || !pts.length) return 0;
+      let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i];
+        if (!p) continue;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      return Math.hypot(maxX - minX, maxY - minY);
+    }
 
     function clearLongTimer() {
       if (gesture && gesture.longTimer) {
@@ -3698,11 +3720,13 @@
       const prefs = currentInkPrefs();
       gesture = {
         pointerId: e.pointerId,
+        pointerType: e.pointerType || "pen",
         mode: "draw",
         marker: null,
         treeId: null,
         startX: e.clientX,
         startY: e.clientY,
+        t0: Date.now(),
         longTimer: null,
         dragging: false,
         suppressed: false,
@@ -3725,9 +3749,15 @@
       clearPreview();
       try { viewer.releasePointerCapture(e.pointerId); } catch (_) {}
       endGesture();
-      // v88: short tap in 加樹 mode → place tree (draw must not steal tap-to-add)
-      const isShortTap = travel <= MOVE_CANCEL_PX && (!pts || pts.length < 3);
-      if (isShortTap && state.annotateMode) {
+      // v101: 加樹 + Pencil — treat brief / tiny strokes as place, not ink
+      const slop = moveCancelPx(g);
+      const span = pathSpanPct(pts);
+      const held = (g && g.t0) ? (Date.now() - g.t0) : 0;
+      const isShortTap = state.annotateMode && (
+        (travel <= slop && span < 2.5) ||
+        (held <= SHORT_TAP_MS && span < 3.5 && travel <= slop * 1.35)
+      );
+      if (isShortTap) {
         suppressClickUntil = Date.now() + 450;
         const pct = pctFromClient(e.clientX, e.clientY);
         if (!pct) {
@@ -3834,11 +3864,13 @@
         if (state.annotateMode) {
           gesture = {
             pointerId: e.pointerId,
+            pointerType: e.pointerType || "pen",
             mode: "pen-pending",
             marker: null,
             treeId: null,
             startX: e.clientX,
             startY: e.clientY,
+            t0: Date.now(),
             longTimer: null,
             dragging: false,
             suppressed: false,
@@ -3858,11 +3890,13 @@
       // Touch: pending — short tap places; drag when zoomed pans; drag unzoomed draws
       gesture = {
         pointerId: e.pointerId,
+        pointerType: e.pointerType || "touch",
         mode: "touch-pending",
         marker: null,
         treeId: null,
         startX: e.clientX,
         startY: e.clientY,
+        t0: Date.now(),
         longTimer: null,
         dragging: false,
         suppressed: false,
@@ -3902,7 +3936,7 @@
       }
 
       if ((gesture.mode === "touch-pending" || gesture.mode === "pen-pending") && !gesture.dragging) {
-        if (dist > MOVE_CANCEL_PX) {
+        if (dist > moveCancelPx(gesture)) {
           gesture.suppressed = true;
           // Finger pan when zoomed — never create a tree from a pan (touch only)
           if (gesture.mode === "touch-pending" && state.mapRefZoom.scale > 1.01) {
@@ -3918,8 +3952,10 @@
             return;
           }
           // Moved past tap threshold → freehand draw (ink only; no tree)
+          // Keep t0/pointerType so finishDraw can still recover a brief Pencil tap as 加樹
           gesture.mode = "draw";
           gesture.place = false;
+          if (!gesture.t0) gesture.t0 = Date.now();
           const ink = currentInkPrefs();
           gesture.inkColor = ink.color;
           gesture.inkWidth = ink.width;
