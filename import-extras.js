@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v93: map|PDF side-by-side always (no portrait stack); keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).

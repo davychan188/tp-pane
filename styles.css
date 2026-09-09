@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v93: force map|PDF side-by-side + list below (no portrait stack). v92/v91 layout experiments. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -749,13 +749,13 @@ body.media-layout .media-panel {
   display: flex;
 }
 body.media-layout {
-  /* Wireframe: map | PDF on top; tree list full-width bottom under both */
+  /* Wireframe: map | PDF on top; catalog/attrs OR tree list full-width bottom */
   grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
   grid-template-rows: 56px minmax(0, 1fr) minmax(160px, 28vh);
   grid-template-areas:
     "top top top"
     "side map media"
-    "side table media";
+    "side table table";
 }
 /* Excel / annotate trees → spreadsheet spans under map + PDF */
 body.media-layout.has-tree-list {
@@ -1384,7 +1384,7 @@ body.media-layout.show-photos .media-pdf-main {
     grid-template-areas:
       "top top"
       "map media"
-      "table media";
+      "table table";
   }
   body.media-layout.has-tree-list {
     grid-template-areas:
