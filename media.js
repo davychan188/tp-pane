@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v88: 加樹 short-tap place; v87: remove export/download hints; v86: map crop+sheets; v85: page pinch locked; PDF/map-ref only. v84: CSS pinch, crisp on end).
+ * Media panel: PDF page viewer via pdf.js canvas (v88: 加樹 short-tap place; v88: remove export/download hints; v86: map crop+sheets; v85: page pinch locked; PDF/map-ref only. v84: CSS pinch, crisp on end).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -235,7 +235,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=87";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=88";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
