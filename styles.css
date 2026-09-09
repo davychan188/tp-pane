@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1286,7 +1286,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v85: document pinch locked (viewport+touch-action+gesture). v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
+/* v86: map crop + multi-sheet. v85: document pinch locked. v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
 .media-nums {
   display: none !important;
 }
@@ -2119,6 +2119,63 @@ body.has-map-ref .status {
   min-height: 0;
 }
 
+
+/* v86: map sheet switcher + crop overlay */
+.map-sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 100%;
+  padding: 2px 0 0;
+  align-items: center;
+}
+.map-sheet-tabs[hidden] { display: none !important; }
+.map-sheet-tab {
+  min-height: 24px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1.2;
+}
+.map-sheet-tab.on {
+  background: #2f9d63;
+  border-color: #2f9d63;
+  color: #fff;
+}
+.map-crop-actions {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.map-crop-actions[hidden] { display: none !important; }
+body.map-crop-mode #btn-map-crop {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: #111;
+}
+.map-crop-overlay {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  cursor: crosshair;
+  touch-action: none;
+  background: rgba(15, 23, 42, 0.08);
+}
+.map-crop-overlay[hidden] { display: none !important; }
+.map-crop-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+.map-crop-rect[hidden] { display: none !important; }
 .map-annotate-layer {
   /* Sized/positioned in JS to the map image content box (object-fit contain) */
   position: absolute;

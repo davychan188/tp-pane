@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=85" />
-  <link rel="stylesheet" href="styles.css?v=85" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=86" />
+  <link rel="stylesheet" href="styles.css?v=86" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -192,6 +192,9 @@
         <iframe id="map-ref-frame" class="map-ref-frame" title="Map PDF" hidden></iframe>
         <img id="map-ref-img" class="map-ref-img" alt="Map reference" hidden />
         <div id="map-annotate-layer" class="map-annotate-layer" aria-hidden="true"></div>
+        <div id="map-crop-overlay" class="map-crop-overlay" hidden aria-hidden="true">
+          <div id="map-crop-rect" class="map-crop-rect" hidden></div>
+        </div>
       </div>
       <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>PDF→影像</div>
     </div>
@@ -208,6 +211,11 @@
             <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
           </label>
         </div>
+        <button class="btn map-ref-btn-compact" type="button" id="btn-map-crop" title="裁切地圖區域成新圖紙">裁切</button>
+        <span class="map-crop-actions" id="map-crop-actions" hidden>
+          <button class="btn map-ref-btn-compact" type="button" id="btn-map-crop-cancel" title="取消裁切">取消</button>
+          <button class="btn map-ref-btn-compact btn-primary" type="button" id="btn-map-crop-confirm" title="確認裁切並新增圖紙">確定</button>
+        </span>
         <button class="btn map-ref-btn-compact" type="button" id="btn-annot-mode-bar" title="Add-tree mode">加樹</button>
         <div class="annot-id-mode annot-id-mode-inline" role="group" aria-label="Tree ID mode" id="annot-id-mode-bar">
           <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動</button>
@@ -221,7 +229,8 @@
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
       </div>
-      <p class="map-ref-hint">清單→匯出 Excel／CSV；地圖墨跡→儲存地圖圖檔；媒體→下載 PDF</p>
+      <div class="map-sheet-tabs" id="map-sheet-tabs" hidden role="tablist" aria-label="地圖圖紙"></div>
+      <p class="map-ref-hint">清單→匯出 Excel／CSV；地圖墨跡→儲存地圖圖檔；裁切→新增圖紙分別畫記；媒體→下載 PDF</p>
     </div>
   </div>
   <div class="annot-float-bar" id="annot-float-bar" hidden title="加樹工具（地圖左下；主控制在左側欄）">
@@ -321,12 +330,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=85"></script>
-  <script src="vendor/geopackage.min.js?v=85"></script>
-  <script src="vendor/xlsx.full.min.js?v=85"></script>
-  <script src="vendor/pdf.min.js?v=85"></script>
-  <script src="media.js?v=85"></script>
-  <script src="import-extras.js?v=85"></script>
-  <script src="app.js?v=85"></script>
+  <script src="vendor/leaflet.js?v=86"></script>
+  <script src="vendor/geopackage.min.js?v=86"></script>
+  <script src="vendor/xlsx.full.min.js?v=86"></script>
+  <script src="vendor/pdf.min.js?v=86"></script>
+  <script src="media.js?v=86"></script>
+  <script src="import-extras.js?v=86"></script>
+  <script src="app.js?v=86"></script>
 </body>
 </html>

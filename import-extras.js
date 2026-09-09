@@ -1,5 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
+ * v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -63,6 +64,11 @@
     mapRefMeta: null,   // { name, kind } when map blob cannot be restored
     mapRefZoom: { scale: 1, x: 0, y: 0 }, // x/y = scrollLeft/Top; scale enlarges layout (no CSS scale())
     mapRefRasterized: false,
+    mapSheets: [],      // [{ id, label, kind:'original'|'crop', url, sourceName, cropOf? }]
+    activeMapSheetId: null,
+    cropMode: false,
+    cropRect: null,     // { x, y, w, h } in active sheet content % (0–100)
+    cropDrag: null,
     objectUrls: [],
     annotateMode: false,
     idMode: "auto",     // "auto" | "manual"
@@ -162,7 +168,8 @@
 
   /** Persist current map's ink under its key so switching maps never bleeds strokes. */
   function saveCurrentMapInk() {
-    const key = state.drawMapKey || mapInkKey(state.mapRefName);
+    const sheet = (typeof getActiveMapSheet === "function") ? getActiveMapSheet() : null;
+    const key = (sheet && sheet.id) || state.drawMapKey || mapInkKey(state.mapRefName);
     if (!key) {
       state.drawStrokes = state.drawStrokes || [];
       return;
@@ -179,6 +186,442 @@
     const raw = (key && Array.isArray(bag[key])) ? bag[key] : [];
     state.drawStrokes = raw.map(normalizeStrokeRec).filter(Boolean);
   }
+
+  function getActiveMapSheet() {
+    const id = state.activeMapSheetId;
+    if (!id || !state.mapSheets || !state.mapSheets.length) return null;
+    for (let i = 0; i < state.mapSheets.length; i++) {
+      if (state.mapSheets[i].id === id) return state.mapSheets[i];
+    }
+    return state.mapSheets[0] || null;
+  }
+
+  /** Original-space % ↔ active sheet % when viewing a crop. */
+  function sheetPctFromOrig(ox, oy) {
+    const sheet = getActiveMapSheet();
+    const c = sheet && sheet.cropOf;
+    if (!c || !(c.w > 0) || !(c.h > 0)) return { x: ox, y: oy };
+    return {
+      x: ((Number(ox) - c.x) / c.w) * 100,
+      y: ((Number(oy) - c.y) / c.h) * 100
+    };
+  }
+
+  function origPctFromSheet(sx, sy) {
+    const sheet = getActiveMapSheet();
+    const c = sheet && sheet.cropOf;
+    if (!c || !(c.w > 0) || !(c.h > 0)) return { x: sx, y: sy };
+    return {
+      x: c.x + (Number(sx) / 100) * c.w,
+      y: c.y + (Number(sy) / 100) * c.h
+    };
+  }
+
+  function remapPathToSheet(path) {
+    if (!path || !path.length) return path;
+    const sheet = getActiveMapSheet();
+    if (!sheet || !sheet.cropOf) return path;
+    return path.map(function (p) {
+      const q = sheetPctFromOrig(p.x, p.y);
+      return { x: q.x, y: q.y };
+    });
+  }
+
+  function remapPathToOrig(path) {
+    if (!path || !path.length) return path;
+    const sheet = getActiveMapSheet();
+    if (!sheet || !sheet.cropOf) return path;
+    return path.map(function (p) {
+      const q = origPctFromSheet(p.x, p.y);
+      return { x: q.x, y: q.y };
+    });
+  }
+
+  function revokeSheetUrl(url) {
+    if (url && String(url).indexOf("blob:") === 0) {
+      try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function clearMapSheets() {
+    (state.mapSheets || []).forEach(function (s) {
+      if (!s || !s.url) return;
+      // Do not revoke URLs still referenced as mapRefUrl / mapRefRasterUrl — those cleared separately
+      if (s.url === state.mapRefUrl || s.url === state.mapRefRasterUrl) return;
+      revokeSheetUrl(s.url);
+    });
+    state.mapSheets = [];
+    state.activeMapSheetId = null;
+  }
+
+  function nextCropSheetMeta(sourceName) {
+    let n = 0;
+    (state.mapSheets || []).forEach(function (s) {
+      if (s && s.kind === "crop") n += 1;
+    });
+    n += 1;
+    const base = mapInkKey(sourceName || state.mapRefName || "map") || "map";
+    return {
+      id: "crop" + n + ":" + base,
+      label: "裁切" + n
+    };
+  }
+
+  function renderMapSheetTabs() {
+    const box = $("map-sheet-tabs");
+    if (!box) return;
+    const sheets = state.mapSheets || [];
+    if (!sheets.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    box.hidden = false;
+    const active = state.activeMapSheetId;
+    box.innerHTML = sheets.map(function (s) {
+      const on = s.id === active ? " on" : "";
+      return '<button type="button" class="map-sheet-tab' + on + '" role="tab" data-sheet-id="' +
+        escapeHtml(s.id) + '" aria-selected="' + (s.id === active ? "true" : "false") + '" title="' +
+        escapeHtml(s.label + (s.sourceName ? " · " + s.sourceName : "")) + '">' +
+        escapeHtml(s.label) + "</button>";
+    }).join("");
+  }
+
+  function syncCropOverlayBox() {
+    const overlay = $("map-crop-overlay");
+    const layer = $("map-annotate-layer");
+    if (!overlay || !layer) return;
+    overlay.style.left = layer.style.left || "0";
+    overlay.style.top = layer.style.top || "0";
+    overlay.style.width = layer.style.width || "100%";
+    overlay.style.height = layer.style.height || "100%";
+  }
+
+  function updateCropRectEl() {
+    const el = $("map-crop-rect");
+    if (!el) return;
+    const r = state.cropRect;
+    if (!r || !(r.w > 0.15) || !(r.h > 0.15)) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    el.style.left = r.x.toFixed(3) + "%";
+    el.style.top = r.y.toFixed(3) + "%";
+    el.style.width = r.w.toFixed(3) + "%";
+    el.style.height = r.h.toFixed(3) + "%";
+  }
+
+  function setCropMode(on) {
+    const want = !!on;
+    if (want) {
+      const img = getMapRefMediaEl();
+      if (!img) {
+        setImportStatus("請先匯入地圖影像（PDF 會自動轉影像）再裁切", "warn");
+        return;
+      }
+    }
+    state.cropMode = want;
+    state.cropDrag = null;
+    if (!want) state.cropRect = null;
+    document.body.classList.toggle("map-crop-mode", want);
+    const overlay = $("map-crop-overlay");
+    const actions = $("map-crop-actions");
+    const btn = $("btn-map-crop");
+    if (overlay) {
+      overlay.hidden = !want;
+      overlay.setAttribute("aria-hidden", want ? "false" : "true");
+    }
+    if (actions) actions.hidden = !want;
+    if (btn) {
+      btn.classList.toggle("is-on", want);
+      btn.textContent = want ? "裁切中" : "裁切";
+    }
+    updateCropRectEl();
+    if (want) {
+      syncAnnotLayerToContent();
+      syncCropOverlayBox();
+      setImportStatus("裁切模式：拖曳選取區域，再按「確定」新增圖紙", "ok");
+    }
+  }
+
+  function exitCropMode() {
+    setCropMode(false);
+  }
+
+  function showSheetOnImg(sheet) {
+    if (!sheet) return;
+    const img = $("map-ref-img");
+    const obj = $("map-ref-object");
+    const emb = $("map-ref-embed");
+    const frame = $("map-ref-frame");
+    const label = $("map-ref-label");
+    const openTab = $("map-ref-open-tab");
+    if (obj) {
+      obj.hidden = true;
+      try { obj.removeAttribute("data"); } catch (e) { /* ignore */ }
+      obj.data = "";
+    }
+    if (emb) {
+      try { emb.removeAttribute("src"); } catch (e) { /* ignore */ }
+      emb.src = "";
+    }
+    if (frame) {
+      frame.hidden = true;
+      frame.removeAttribute("src");
+    }
+    if (img) {
+      const onReady = function () {
+        img.removeEventListener("load", onReady);
+        applyMapRefZoom();
+        renderAnnotOverlay();
+        syncCropOverlayBox();
+      };
+      img.addEventListener("load", onReady);
+      img.hidden = false;
+      if (img.src !== sheet.url) img.src = sheet.url;
+      img.alt = sheet.label + (sheet.sourceName ? " · " + sheet.sourceName : "");
+      if (img.complete && img.naturalWidth) onReady();
+    }
+    if (label) {
+      const base = sheet.sourceName || state.mapRefName || "地圖";
+      label.textContent = "地圖參考 · " + base + (sheet.kind === "crop" ? " · " + sheet.label : "");
+    }
+    if (openTab && sheet.url) {
+      openTab.hidden = false;
+      openTab.href = sheet.url;
+      openTab.removeAttribute("download");
+      openTab.textContent = "新分頁";
+      openTab.title = "新分頁開啟目前圖紙";
+    }
+  }
+
+  function switchMapSheet(sheetId) {
+    if (!sheetId) return;
+    const sheets = state.mapSheets || [];
+    let sheet = null;
+    for (let i = 0; i < sheets.length; i++) {
+      if (sheets[i].id === sheetId) { sheet = sheets[i]; break; }
+    }
+    if (!sheet) return;
+    if (state.activeMapSheetId === sheet.id) {
+      renderMapSheetTabs();
+      return;
+    }
+    if (state.cropMode) exitCropMode();
+    saveCurrentMapInk();
+    state.activeMapSheetId = sheet.id;
+    loadMapInk(sheet.id);
+    showSheetOnImg(sheet);
+    renderMapSheetTabs();
+    schedulePersist();
+    setImportStatus("已切換圖紙：" + sheet.label, "ok");
+  }
+
+  function registerOriginalSheet(displayUrl, name) {
+    const id = mapInkKey(name) || "original";
+    // Replace sheet list but keep ink bag (keyed by id)
+    clearMapSheets();
+    state.mapSheets = [{
+      id: id,
+      label: "原圖",
+      kind: "original",
+      url: displayUrl,
+      sourceName: name || "",
+      cropOf: null
+    }];
+    state.activeMapSheetId = id;
+    // Align ink key with sheet id (filename key — back-compat)
+    if (state.drawMapKey !== id) {
+      saveCurrentMapInk();
+      loadMapInk(id);
+    } else {
+      state.drawMapKey = id;
+    }
+    renderMapSheetTabs();
+  }
+
+  function updateActiveSheetDisplayUrl(url) {
+    const sheet = getActiveMapSheet();
+    if (sheet && url) sheet.url = url;
+  }
+
+  function cropImageToPngBlob(img, rectPct) {
+    return new Promise(function (resolve, reject) {
+      try {
+        const nw = img.naturalWidth;
+        const nh = img.naturalHeight;
+        if (!nw || !nh) {
+          reject(new Error("地圖影像尚未就緒"));
+          return;
+        }
+        let sx = Math.round((rectPct.x / 100) * nw);
+        let sy = Math.round((rectPct.y / 100) * nh);
+        let sw = Math.round((rectPct.w / 100) * nw);
+        let sh = Math.round((rectPct.h / 100) * nh);
+        sx = Math.max(0, Math.min(nw - 1, sx));
+        sy = Math.max(0, Math.min(nh - 1, sy));
+        sw = Math.max(1, Math.min(nw - sx, sw));
+        sh = Math.max(1, Math.min(nh - sy, sh));
+        const canvas = document.createElement("canvas");
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (!ctx) {
+          reject(new Error("無法建立裁切畫布"));
+          return;
+        }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sw, sh);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        if (canvas.toBlob) {
+          canvas.toBlob(function (blob) {
+            if (!blob) reject(new Error("裁切輸出失敗"));
+            else resolve(blob);
+          }, "image/png");
+        } else {
+          reject(new Error("瀏覽器不支援 toBlob"));
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function confirmMapCrop() {
+    const r = state.cropRect;
+    if (!r || !(r.w > 0.4) || !(r.h > 0.4)) {
+      setImportStatus("請拖曳選取較大的裁切範圍", "warn");
+      return;
+    }
+    const img = getMapRefMediaEl();
+    if (!img) {
+      setImportStatus("沒有可裁切的地圖影像", "warn");
+      return;
+    }
+    const active = getActiveMapSheet();
+    const sourceName = (active && active.sourceName) || state.mapRefName || "map";
+    setImportStatus("裁切中…", "");
+    cropImageToPngBlob(img, r).then(function (blob) {
+      const meta = nextCropSheetMeta(sourceName);
+      const url = rememberUrl(URL.createObjectURL(blob));
+      // cropOf in original content % (compose through parent crop if any)
+      let ox = r.x;
+      let oy = r.y;
+      let ow = r.w;
+      let oh = r.h;
+      if (active && active.cropOf) {
+        ox = active.cropOf.x + (r.x / 100) * active.cropOf.w;
+        oy = active.cropOf.y + (r.y / 100) * active.cropOf.h;
+        ow = (r.w / 100) * active.cropOf.w;
+        oh = (r.h / 100) * active.cropOf.h;
+      }
+      const sheet = {
+        id: meta.id,
+        label: meta.label,
+        kind: "crop",
+        url: url,
+        sourceName: sourceName,
+        cropOf: { x: ox, y: oy, w: ow, h: oh, parentId: active ? active.id : null }
+      };
+      saveCurrentMapInk();
+      state.mapSheets.push(sheet);
+      state.activeMapSheetId = sheet.id;
+      loadMapInk(sheet.id);
+      exitCropMode();
+      showSheetOnImg(sheet);
+      renderMapSheetTabs();
+      schedulePersist();
+      setImportStatus("已新增圖紙「" + sheet.label + "」· 可分別畫墨跡；按圖紙標籤切換", "ok");
+    }).catch(function (err) {
+      console.warn(err);
+      setImportStatus("裁切失敗：" + (err && err.message ? err.message : err), "error");
+    });
+  }
+
+  function bindMapCropUi() {
+    const btn = $("btn-map-crop");
+    if (btn && !btn._cropBound) {
+      btn._cropBound = true;
+      btn.addEventListener("click", function () {
+        if (!state.mapRefUrl) {
+          setImportStatus("尚未匯入地圖 PDF／圖片", "warn");
+          return;
+        }
+        if (state.cropMode) exitCropMode();
+        else setCropMode(true);
+      });
+    }
+    const cancel = $("btn-map-crop-cancel");
+    if (cancel && !cancel._cropBound) {
+      cancel._cropBound = true;
+      cancel.addEventListener("click", function () { exitCropMode(); });
+    }
+    const confirm = $("btn-map-crop-confirm");
+    if (confirm && !confirm._cropBound) {
+      confirm._cropBound = true;
+      confirm.addEventListener("click", function () { confirmMapCrop(); });
+    }
+    const tabs = $("map-sheet-tabs");
+    if (tabs && !tabs._sheetBound) {
+      tabs._sheetBound = true;
+      tabs.addEventListener("click", function (e) {
+        const t = e.target && e.target.closest ? e.target.closest("[data-sheet-id]") : null;
+        if (!t) return;
+        e.preventDefault();
+        switchMapSheet(t.getAttribute("data-sheet-id"));
+      });
+    }
+    const overlay = $("map-crop-overlay");
+    if (overlay && !overlay._cropPtrBound) {
+      overlay._cropPtrBound = true;
+      function pctFromOverlay(clientX, clientY) {
+        const rect = overlay.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const x = ((clientX - rect.left) / rect.width) * 100;
+        const y = ((clientY - rect.top) / rect.height) * 100;
+        return {
+          x: Math.max(0, Math.min(100, x)),
+          y: Math.max(0, Math.min(100, y))
+        };
+      }
+      overlay.addEventListener("pointerdown", function (e) {
+        if (!state.cropMode) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        // Allow two-finger pinch to pass (ignore non-primary multi-touch starts loosely)
+        e.preventDefault();
+        e.stopPropagation();
+        const p = pctFromOverlay(e.clientX, e.clientY);
+        if (!p) return;
+        state.cropDrag = { pointerId: e.pointerId, x0: p.x, y0: p.y };
+        state.cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+        updateCropRectEl();
+        try { overlay.setPointerCapture(e.pointerId); } catch (_) {}
+      }, { passive: false });
+      overlay.addEventListener("pointermove", function (e) {
+        if (!state.cropDrag || state.cropDrag.pointerId !== e.pointerId) return;
+        e.preventDefault();
+        const p = pctFromOverlay(e.clientX, e.clientY);
+        if (!p) return;
+        const x0 = state.cropDrag.x0;
+        const y0 = state.cropDrag.y0;
+        const x = Math.min(x0, p.x);
+        const y = Math.min(y0, p.y);
+        const w = Math.abs(p.x - x0);
+        const h = Math.abs(p.y - y0);
+        state.cropRect = { x: x, y: y, w: w, h: h };
+        updateCropRectEl();
+      }, { passive: false });
+      function endCropDrag(e) {
+        if (!state.cropDrag || (e && state.cropDrag.pointerId !== e.pointerId)) return;
+        state.cropDrag = null;
+        try { if (e) overlay.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+      overlay.addEventListener("pointerup", endCropDrag);
+      overlay.addEventListener("pointercancel", endCropDrag);
+    }
+  }
+
 
   function loadInkPrefs() {
     try {
@@ -935,6 +1378,8 @@
   }
 
   function revokeMapRefUrl() {
+    // Revoke sheet blob URLs first (skips urls still equal to mapRef*/raster)
+    if (typeof clearMapSheets === "function") clearMapSheets();
     if (state.mapRefUrl && String(state.mapRefUrl).indexOf("blob:") === 0) {
       try { URL.revokeObjectURL(state.mapRefUrl); } catch (e) { /* ignore */ }
     }
@@ -946,6 +1391,17 @@
     state.mapRefKind = null;
     state.mapRefName = "";
     state.mapRefRasterized = false;
+    state.mapSheets = [];
+    state.activeMapSheetId = null;
+    if (state.cropMode && typeof exitCropMode === "function") {
+      try { exitCropMode(); } catch (e) { state.cropMode = false; }
+    } else {
+      state.cropMode = false;
+      state.cropRect = null;
+      state.cropDrag = null;
+    }
+    const tabs = $("map-sheet-tabs");
+    if (tabs) { tabs.hidden = true; tabs.innerHTML = ""; }
   }
 
   function parseCsvText(text) {
@@ -1609,6 +2065,7 @@
       layer.style.top = "0";
       layer.style.width = "100%";
       layer.style.height = "100%";
+      if (typeof syncCropOverlayBox === "function") syncCropOverlayBox();
     }
     if (!media || !sw || !sh) {
       fillStage();
@@ -1639,6 +2096,7 @@
     layer.style.top = (it + box.top).toFixed(2) + "px";
     layer.style.width = box.width.toFixed(2) + "px";
     layer.style.height = box.height.toFixed(2) + "px";
+    if (typeof syncCropOverlayBox === "function") syncCropOverlayBox();
   }
 
   function ensureAnnotLayerObserver() {
@@ -1962,6 +2420,9 @@
 
   function showMapRef(file) {
     // Save previous map's ink under its key BEFORE switching (never bleed onto new map)
+    if (state.cropMode) {
+      try { exitCropMode(); } catch (e) { state.cropMode = false; }
+    }
     saveCurrentMapInk();
     revokeMapRefUrl();
     hideMapRefViewers();
@@ -1982,7 +2443,9 @@
     const label = $("map-ref-label");
     const openTab = $("map-ref-open-tab");
 
-    function finishShow(statusMsg) {
+    function finishShow(statusMsg, displayUrl) {
+      const sheetUrl = displayUrl || state.mapRefRasterUrl || state.mapRefUrl || url;
+      registerOriginalSheet(sheetUrl, name);
       if (label) label.textContent = "地圖參考 · " + name;
       document.body.classList.add("force-map-ref");
       state.mapRefMeta = { name: name, kind: state.mapRefKind };
@@ -1990,6 +2453,7 @@
       ensureAnnotLayerObserver();
       applyMapRefZoom();
       renderAnnotOverlay();
+      renderMapSheetTabs();
       updateMapRestoreHint();
       schedulePersist();
       setImportStatus(statusMsg, "ok");
@@ -2008,7 +2472,7 @@
       setImportStatus("正在將 PDF 轉成影像以便加樹…", "");
       rasterizeMapRefPdf(url).then(function (ok) {
         if (ok) {
-          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可直接畫墨跡）");
+          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可直接畫墨跡／裁切）", state.mapRefRasterUrl);
           return;
         }
         // Fallback: native PDF viewer (less accurate for annotate)
@@ -2054,11 +2518,14 @@
       openTab.textContent = "新分頁";
       openTab.title = "新分頁開啟目前地圖圖片";
     }
-    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可直接畫墨跡；開「加樹模式」短點加樹）");
+    finishShow("已載入地圖參考：" + name + "（可按「切換地圖」返回 Leaflet；可直接畫墨跡／裁切；開「加樹模式」短點加樹）", url);
   }
 
   function clearMapRef() {
     saveCurrentMapInk();
+    if (state.cropMode) {
+      try { exitCropMode(); } catch (e) { state.cropMode = false; }
+    }
     revokeMapRefUrl();
     hideMapRefViewers();
     resetMapRefZoom();
@@ -2068,6 +2535,7 @@
     document.body.classList.remove("force-map-ref");
     updateMapRefVisibility();
     renderAnnotOverlay();
+    renderMapSheetTabs();
     updateMapRestoreHint();
     schedulePersist();
     setImportStatus("已清除地圖參考", "");
@@ -2364,6 +2832,13 @@
       const c = pathCentroid(path);
       if (c) { x = c.x; y = c.y; }
     }
+    // Place events are in active sheet %; store original-% when on a crop sheet
+    if (path && path.length) path = remapPathToOrig(path);
+    if (x != null && y != null && isFinite(x) && isFinite(y)) {
+      const mapped = origPctFromSheet(x, y);
+      x = mapped.x;
+      y = mapped.y;
+    }
     if (path && path.length === 1 && x != null && y != null) {
       // Keep a one-point path so reload still knows it was ink-placed
       path = [{ x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) }];
@@ -2534,16 +3009,20 @@
     });
     state.trees.forEach((t) => {
       if (t.x == null || t.y == null) return;
+      const disp = sheetPctFromOrig(t.x, t.y);
+      // Hide markers clearly outside the active crop view
+      if (disp.x < -8 || disp.x > 108 || disp.y < -8 || disp.y > 108) return;
       const tid = escapeHtml(t.id);
       const on = !!(selU && String(t.id).toUpperCase() === selU);
-      const inkPts = (t.path && t.path.length >= 2) ? t.path : null;
+      const inkPtsRaw = (t.path && t.path.length >= 2) ? t.path : null;
+      const inkPts = inkPtsRaw ? remapPathToSheet(inkPtsRaw) : null;
       if (inkPts) {
         pathsHtml += '<path class="annot-ink' + (on ? " on" : "") + '" data-tree-id="' + tid +
           '" d="' + pathToSvgD(inkPts) + '" fill="none" vector-effect="non-scaling-stroke"></path>';
       }
       markersHtml += '<button type="button" class="annot-marker' + (inkPts ? " has-path" : "") +
         (on ? " on" : "") + '" data-tree-id="' + tid +
-        '" style="left:' + Number(t.x).toFixed(3) + "%;top:" + Number(t.y).toFixed(3) + '%" title="' +
+        '" style="left:' + Number(disp.x).toFixed(3) + "%;top:" + Number(disp.y).toFixed(3) + '%" title="' +
         tid + '">' +
         '<span class="annot-marker-dot" aria-hidden="true"></span>' +
         '<span class="annot-marker-label">' + tid + "</span>" +
@@ -2591,13 +3070,16 @@
     const want = String(treeId || "").toUpperCase();
     const t = state.trees.find((x0) => String(x0.id).toUpperCase() === want);
     if (!t) return false;
-    const nx = Math.max(0, Math.min(100, Number(x)));
-    const ny = Math.max(0, Math.min(100, Number(y)));
+    // Incoming x/y/path are in active sheet %; persist in original % when on a crop
+    const mapped = origPctFromSheet(Number(x), Number(y));
+    const nx = Math.max(0, Math.min(100, mapped.x));
+    const ny = Math.max(0, Math.min(100, mapped.y));
     if (!isFinite(nx) || !isFinite(ny)) return false;
     const ox = t.x != null && isFinite(Number(t.x)) ? Number(t.x) : nx;
     const oy = t.y != null && isFinite(Number(t.y)) ? Number(t.y) : ny;
     if (pathOpt && Array.isArray(pathOpt)) {
-      t.path = simplifyPath(pathOpt) || normalizePath(pathOpt);
+      const remapped = remapPathToOrig(pathOpt);
+      t.path = simplifyPath(remapped) || normalizePath(remapped);
     } else if (t.path && t.path.length && (nx !== ox || ny !== oy)) {
       t.path = translatePath(t.path, nx - ox, ny - oy);
     }
@@ -2857,13 +3339,16 @@
     });
 
     state.trees.forEach(function (t) {
-      const inkPts = (t.path && t.path.length >= 2) ? t.path : null;
+      if (t.x == null || t.y == null || !isFinite(t.x) || !isFinite(t.y)) return;
+      const disp = sheetPctFromOrig(t.x, t.y);
+      if (disp.x < -8 || disp.x > 108 || disp.y < -8 || disp.y > 108) return;
+      const inkPtsRaw = (t.path && t.path.length >= 2) ? t.path : null;
+      const inkPts = inkPtsRaw ? remapPathToSheet(inkPtsRaw) : null;
       if (inkPts) {
         drawStrokeOnCanvas(ctx, inkPts, "#fbbf24", 2.25 * pxScale);
       }
-      if (t.x == null || t.y == null || !isFinite(t.x) || !isFinite(t.y)) return;
-      const cx = (Number(t.x) / 100) * nw;
-      const cy = (Number(t.y) / 100) * nh;
+      const cx = (Number(disp.x) / 100) * nw;
+      const cy = (Number(disp.y) / 100) * nh;
       const r = Math.max(4, 5 * pxScale);
       ctx.save();
       ctx.fillStyle = "#fbbf24";
@@ -2891,7 +3376,9 @@
       ctx.restore();
     });
 
-    const base = (state.mapRefName ? String(state.mapRefName).replace(/\.[^.]+$/, "") : "map") + "_ink.png";
+    const sheet = getActiveMapSheet();
+    const sheetTag = (sheet && sheet.kind === "crop" && sheet.label) ? ("_" + sheet.label) : "";
+    const base = (state.mapRefName ? String(state.mapRefName).replace(/\.[^.]+$/, "") : "map") + sheetTag + "_ink.png";
     setImportStatus("正在產生地圖 PNG…", "");
 
     // Cap output size so iPad Safari can finish toDataURL inside the user-gesture turn
@@ -3115,10 +3602,14 @@
       gesture.dragging = true;
       gesture.marker.classList.remove("pressing");
       gesture.marker.classList.add("dragging");
-      gesture.originX = t && t.x != null ? Number(t.x) : null;
-      gesture.originY = t && t.y != null ? Number(t.y) : null;
+      // Drag math runs in active sheet % (markers are rendered remapped on crops)
+      const originSheet = (t && t.x != null && t.y != null)
+        ? sheetPctFromOrig(Number(t.x), Number(t.y))
+        : null;
+      gesture.originX = originSheet ? originSheet.x : null;
+      gesture.originY = originSheet ? originSheet.y : null;
       gesture.basePath = (t && t.path && t.path.length)
-        ? t.path.map(function (p) { return { x: p.x, y: p.y }; })
+        ? remapPathToSheet(t.path.map(function (p) { return { x: p.x, y: p.y }; }))
         : (gesture.originX != null ? [{ x: gesture.originX, y: gesture.originY }] : null);
       gesture.livePath = gesture.basePath;
       try { gesture.marker.setPointerCapture(gesture.pointerId); } catch (_) {}
@@ -3195,6 +3686,7 @@
 
     // Claim Apple Pencil early (capture) so Safari scroll/Scribble cannot cancel the pointer stream
     viewer.addEventListener("touchstart", (e) => {
+      if (state.cropMode) return;
       if (!layer.classList.contains("active")) return;
       if (!e.touches || !e.touches.length) return;
       let stylus = false;
@@ -3209,6 +3701,7 @@
 
     viewer.addEventListener("pointerdown", (e) => {
       // Ink draw works whenever the layer is active (map-ref). Tree place needs 加樹 mode.
+      if (state.cropMode) return; // crop overlay owns pointers
       if (!layer.classList.contains("active")) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       // Ignore UI chrome inside the viewer (zoom is in toolbar outside viewer)
@@ -3604,6 +4097,7 @@
 
     initAnnotControls();
     bindInkControls();
+    bindMapCropUi();
 
     // Re-evaluate visibility when vectors change (poll light)
     setInterval(function () {
