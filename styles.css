@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;

@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v96: label UX stay-on + chunked/hard-cap in app.js; v95: GPKG lag fixes in app.js; v94: restore v90 portrait ≤700; keep Import overlay close; v90: annotate-only auto T# ids (import-extras); v89: always-on tree labels via annotate CSS/JS; v88: 加樹 short-tap place; v88: remove export/download hints; v86: map crop+sheets; v85: page pinch locked; PDF/map-ref only. v84: CSS pinch, crisp on end).
+ * Media panel: PDF page viewer via pdf.js canvas (v100: finger swipe L/R to change PDF page when not zoomed; v99: map→list sync in app; v96: label UX; v95: GPKG lag; v90 annotate ids).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -235,7 +235,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=99";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=100";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -1546,9 +1546,12 @@
 
     let pinch = null; // { dist, zoom, ox, oy }
     let pan = null;   // { x, y, sl, st }
+    let swipe = null; // { x, y, t } one-finger page swipe when not zoomed
     let liveZoom = null; // absolute zoom while previewing (null = idle)
     let wheelTimer = null;
     let pendingFocus = null; // { x, y } client coords for commit
+    const SWIPE_MIN_DX = 56;
+    const SWIPE_MAX_DY = 72;
 
     function touchDist(a, b) {
       const dx = a.clientX - b.clientX;
@@ -1650,10 +1653,16 @@
       }
       pinch = null;
       const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
-      if (zNow > 1.01 && e.touches.length === 1) {
-        const t = e.touches[0];
-        pan = { x: t.clientX, y: t.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
-        scroll.classList.add("is-panning");
+      if (e.touches.length === 1) {
+        const t0 = e.touches[0];
+        if (zNow > 1.01) {
+          swipe = null;
+          pan = { x: t0.clientX, y: t0.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
+          scroll.classList.add("is-panning");
+        } else {
+          pan = null;
+          swipe = { x: t0.clientX, y: t0.clientY, t: Date.now() };
+        }
       }
     }, { passive: false });
 
@@ -1672,9 +1681,19 @@
       const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
       if (pan && e.touches.length === 1 && zNow > 1.01) {
         e.preventDefault();
-        const t = e.touches[0];
-        scroll.scrollLeft = pan.sl - (t.clientX - pan.x);
-        scroll.scrollTop = pan.st - (t.clientY - pan.y);
+        const t0 = e.touches[0];
+        scroll.scrollLeft = pan.sl - (t0.clientX - pan.x);
+        scroll.scrollTop = pan.st - (t0.clientY - pan.y);
+        return;
+      }
+      // Horizontal swipe candidate: lock vertical rubber-band a bit once clearly sideways
+      if (swipe && e.touches.length === 1 && zNow <= 1.01) {
+        const t0 = e.touches[0];
+        const dx = t0.clientX - swipe.x;
+        const dy = t0.clientY - swipe.y;
+        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          e.preventDefault();
+        }
       }
     }, { passive: false });
 
@@ -1686,12 +1705,28 @@
           const cx = pinch.cx;
           const cy = pinch.cy;
           pinch = null;
+          swipe = null;
           commitAbsZoom(next, cx, cy);
         }
       }
       if (pan && (!e.touches || e.touches.length === 0)) {
         pan = null;
         scroll.classList.remove("is-panning");
+      }
+      // Finger swipe left/right → next/prev PDF page (only when not zoomed / not pinching)
+      if (swipe && (!e.touches || e.touches.length === 0)) {
+        const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
+        const changed = e.changedTouches && e.changedTouches[0];
+        if (changed && zNow <= 1.01 && !pinch) {
+          const dx = changed.clientX - swipe.x;
+          const dy = changed.clientY - swipe.y;
+          const dt = Date.now() - (swipe.t || 0);
+          if (dt < 800 && Math.abs(dx) >= SWIPE_MIN_DX && Math.abs(dx) > Math.abs(dy) && Math.abs(dy) <= SWIPE_MAX_DY) {
+            // swipe left → next page; swipe right → previous
+            stepPdfPage(dx < 0 ? 1 : -1);
+          }
+        }
+        swipe = null;
       }
     }
     scroll.addEventListener("touchend", endPinch);
