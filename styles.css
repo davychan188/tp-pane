@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v91: iPad portrait stack ≤1024 + collapse Import overlay. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1442,8 +1442,9 @@ body.media-layout.show-photos .media-pdf-main {
   }
 }
 
-/* Narrow portrait: stack media below */
-@media (max-width: 700px) and (orientation: portrait) {
+/* v91: tablet portrait (≤1024 — covers iPad mini ~744–768 and larger iPads) stack:
+   map → PDF → full-width tree list. Landscape keeps map|PDF + list below via 1180 rules. */
+@media (max-width: 1024px) and (orientation: portrait) {
   body.media-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr minmax(140px, 26vh) minmax(200px, 32vh);
@@ -1480,6 +1481,32 @@ body.media-layout.show-photos .media-pdf-main {
   body.media-layout .media-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+}
+
+/* v91: after map/excel load, collapse Import primary actions on overlay sidebar
+   so the card cannot cover the tree list when menu is reopened. Annot controls stay. */
+@media (max-width: 1180px) {
+  body.has-map-ref #import-nogpkg-card > .import-primary-actions,
+  body.has-tree-list #import-nogpkg-card > .import-primary-actions {
+    display: none;
+  }
+  body.has-map-ref #import-nogpkg-card > .card-title::after,
+  body.has-tree-list #import-nogpkg-card > .card-title::after {
+    content: " · 已載入";
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  /* Tree list above map chrome; sidebar (z=800) only covers when menu-open */
+  body.has-tree-list .tree-list-panel,
+  body.has-map-ref .tree-list-panel {
+    position: relative;
+    z-index: 2;
+  }
+  .table-panel {
+    position: relative;
+    z-index: 1;
   }
 }
 

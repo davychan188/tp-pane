@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=90" />
-  <link rel="stylesheet" href="styles.css?v=90" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=91" />
+  <link rel="stylesheet" href="styles.css?v=91" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -111,8 +111,9 @@
       </label>
     </div>
 
-    <div class="settings-card">
+    <div class="settings-card" id="import-nogpkg-card">
       <div class="card-title">無需 GPKG · Import</div>
+      <div class="import-primary-actions">
       <label class="btn full" style="position:relative;overflow:hidden" title="Import Excel / CSV">
         匯入 Excel／CSV
         <input id="excel-file-input-side" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
@@ -122,6 +123,7 @@
         <input id="map-ref-file-input-side" type="file" accept=".pdf,image/*,application/pdf" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <div class="hint" style="margin-top:6px">可只匯入清單，或只匯入地圖 PDF；兩者互不阻擋，不必開 .gpkg。</div>
+      </div>
       <div class="annot-controls" id="annot-controls-side">
         <button class="btn full" type="button" id="btn-annot-mode" title="Add-tree mode · tap map to place trees (drawing is ink-only)">加樹模式 Add tree</button>
         <div class="annot-id-mode" role="group" aria-label="Tree ID mode">
@@ -327,12 +329,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=90"></script>
-  <script src="vendor/geopackage.min.js?v=90"></script>
-  <script src="vendor/xlsx.full.min.js?v=90"></script>
-  <script src="vendor/pdf.min.js?v=90"></script>
-  <script src="media.js?v=90"></script>
-  <script src="import-extras.js?v=90"></script>
-  <script src="app.js?v=90"></script>
+  <script src="vendor/leaflet.js?v=91"></script>
+  <script src="vendor/geopackage.min.js?v=91"></script>
+  <script src="vendor/xlsx.full.min.js?v=91"></script>
+  <script src="vendor/pdf.min.js?v=91"></script>
+  <script src="media.js?v=91"></script>
+  <script src="import-extras.js?v=91"></script>
+  <script src="app.js?v=91"></script>
 </body>
 </html>

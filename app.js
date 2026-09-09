@@ -2930,7 +2930,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=90").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=91").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
@@ -3201,6 +3201,7 @@
     hasVectorLayers: hasVectorLayers,
     hasMappedPoints: hasMappedPoints,
     setStatus: setStatus,
+    setMenuOpen: setMenuOpen,
     invalidateMap: function () { try { map.invalidateSize(); } catch (_) {} },
     getMap: function () { return map; },
     getState: function () { return state; }
