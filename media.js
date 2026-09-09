@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (sharp zoom).
+ * Media panel: PDF page viewer via pdf.js canvas (v84: CSS pinch, crisp on end).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -235,7 +235,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=83";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=84";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -1537,15 +1537,18 @@
 
   /**
    * Finger pinch to zoom PDF canvas (pdf.js) + pan when zoomed.
-   * Live CSS scale during pinch; crisp re-render on release / wheel (no ± buttons).
+   * v84: continuous CSS transform during pinch/wheel; crisp pdf.js re-render only
+   * on pinch end / wheel debounce — no discrete stepped canvas redraws mid-gesture.
    */
   function bindPdfGestures(scroll) {
     if (!scroll || scroll._pdfGesturesBound) return;
     scroll._pdfGesturesBound = true;
 
-    let pinch = null; // { dist, zoom, scrollL, scrollT, cx, cy }
+    let pinch = null; // { dist, zoom, ox, oy }
     let pan = null;   // { x, y, sl, st }
-    let previewScale = 1;
+    let liveZoom = null; // absolute zoom while previewing (null = idle)
+    let wheelTimer = null;
+    let pendingFocus = null; // { x, y } client coords for commit
 
     function touchDist(a, b) {
       const dx = a.clientX - b.clientX;
@@ -1559,43 +1562,73 @@
       return $("media-pdf-stage");
     }
     function clearPreview() {
-      previewScale = 1;
+      liveZoom = null;
       const stage = stageEl();
-      if (stage) stage.style.transform = "none";
+      if (stage) {
+        stage.style.transform = "none";
+        stage.style.transformOrigin = "0 0";
+      }
     }
-    function applyPreview(scale, originX, originY) {
-      previewScale = scale;
+    /** Continuous CSS scale relative to currently rendered canvas (state.pdfZoom). */
+    function applyLivePreview(absZoom, originClientX, originClientY) {
+      const base = state.pdfZoom || 1;
+      const next = clamp(absZoom, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+      liveZoom = next;
+      const factor = next / base;
       const stage = stageEl();
       if (!stage) return;
-      stage.style.transformOrigin = originX.toFixed(1) + "px " + originY.toFixed(1) + "px";
-      stage.style.transform = "scale(" + scale.toFixed(4) + ")";
+      const rect = scroll.getBoundingClientRect();
+      const ox = (originClientX != null ? originClientX : rect.left + rect.width / 2) - rect.left + scroll.scrollLeft;
+      const oy = (originClientY != null ? originClientY : rect.top + rect.height / 2) - rect.top + scroll.scrollTop;
+      stage.style.transformOrigin = ox.toFixed(2) + "px " + oy.toFixed(2) + "px";
+      stage.style.transform = "scale(" + factor.toFixed(5) + ")";
+      const readout = $("media-pdf-zoom-level");
+      if (readout) {
+        readout.textContent = (Math.round(next * 10) / 10) + "×";
+        readout.hidden = next <= 1.01;
+      }
+      if (scroll) scroll.classList.toggle("is-zoomed", next > 1.01);
     }
-    function commitPinchZoom(nextZoom, focusClientX, focusClientY) {
-      const prev = state.pdfZoom;
-      const next = clamp(nextZoom, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
-      clearPreview();
-      if (Math.abs(next - prev) < 0.001) {
+
+    function commitAbsZoom(absZoom, focusClientX, focusClientY) {
+      const prev = state.pdfZoom || 1;
+      const next = clamp(absZoom, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+      pendingFocus = { x: focusClientX, y: focusClientY };
+      // Hold CSS preview at final factor until crisp re-render (avoids snap/格格)
+      applyLivePreview(next, focusClientX, focusClientY);
+      if (Math.abs(next - prev) < 0.0005) {
+        clearPreview();
         updatePdfZoomLabel();
         return;
       }
-      // Preserve focal point roughly via scroll position after re-render
       const rect = scroll.getBoundingClientRect();
-      const relX = (focusClientX != null ? focusClientX : rect.left + rect.width / 2) - rect.left + scroll.scrollLeft;
-      const relY = (focusClientY != null ? focusClientY : rect.top + rect.height / 2) - rect.top + scroll.scrollTop;
-      const ratio = next / (prev || 1);
-      state.pdfZoom = next;
-      updatePdfZoomLabel();
+      const fx = (focusClientX != null ? focusClientX : rect.left + rect.width / 2);
+      const fy = (focusClientY != null ? focusClientY : rect.top + rect.height / 2);
+      const relX = fx - rect.left + scroll.scrollLeft;
+      const relY = fy - rect.top + scroll.scrollTop;
+      const ratio = next / prev;
+      // Update label now; keep state.pdfZoom=prev so preview factor stays correct
+      const readout = $("media-pdf-zoom-level");
+      if (readout) {
+        readout.textContent = (Math.round(next * 10) / 10) + "×";
+        readout.hidden = next <= 1.01;
+      }
       if (state.pdfRenderTimer) {
         clearTimeout(state.pdfRenderTimer);
         state.pdfRenderTimer = null;
       }
       state.pdfRenderTimer = setTimeout(function () {
         state.pdfRenderTimer = null;
+        state.pdfZoom = next;
+        updatePdfZoomLabel();
         renderPdfCanvas().then(function () {
-          scroll.scrollLeft = Math.max(0, relX * ratio - rect.width / 2);
-          scroll.scrollTop = Math.max(0, relY * ratio - rect.height / 2);
+          clearPreview();
+          scroll.scrollLeft = Math.max(0, relX * ratio - (fx - rect.left));
+          scroll.scrollTop = Math.max(0, relY * ratio - (fy - rect.top));
+        }).catch(function () {
+          clearPreview();
         });
-      }, 40);
+      }, 48);
     }
 
     scroll.addEventListener("touchstart", function (e) {
@@ -1603,21 +1636,21 @@
       if (e.touches.length === 2) {
         e.preventDefault();
         pan = null;
+        if (wheelTimer) { clearTimeout(wheelTimer); wheelTimer = null; }
         const d = touchDist(e.touches[0], e.touches[1]);
         const mid = midPoint(e.touches[0], e.touches[1]);
-        const rect = scroll.getBoundingClientRect();
+        const base = (liveZoom != null) ? liveZoom : state.pdfZoom;
         pinch = {
           dist: d,
-          zoom: state.pdfZoom,
-          scrollL: scroll.scrollLeft,
-          scrollT: scroll.scrollTop,
-          ox: mid.x - rect.left + scroll.scrollLeft,
-          oy: mid.y - rect.top + scroll.scrollTop
+          zoom: base,
+          cx: mid.x,
+          cy: mid.y
         };
         return;
       }
       pinch = null;
-      if (state.pdfZoom > 1.01 && e.touches.length === 1) {
+      const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
+      if (zNow > 1.01 && e.touches.length === 1) {
         const t = e.touches[0];
         pan = { x: t.clientX, y: t.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
         scroll.classList.add("is-panning");
@@ -1631,21 +1664,13 @@
         const d = touchDist(e.touches[0], e.touches[1]);
         const factor = d / pinch.dist;
         const live = clamp(pinch.zoom * factor, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
-        const preview = live / (pinch.zoom || 1);
         const mid = midPoint(e.touches[0], e.touches[1]);
-        const rect = scroll.getBoundingClientRect();
-        applyPreview(preview, mid.x - rect.left, mid.y - rect.top);
-        // Keep pinch mid roughly centered while previewing
-        scroll.scrollLeft = pinch.ox * preview - (mid.x - rect.left);
-        scroll.scrollTop = pinch.oy * preview - (mid.y - rect.top);
-        const readout = $("media-pdf-zoom-level");
-        if (readout) {
-          readout.textContent = (Math.round(live * 10) / 10) + "×";
-          readout.hidden = live <= 1.01;
-        }
+        // Transform-only — do not re-render or fight scroll each frame
+        applyLivePreview(live, mid.x, mid.y);
         return;
       }
-      if (pan && e.touches.length === 1 && state.pdfZoom > 1.01) {
+      const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
+      if (pan && e.touches.length === 1 && zNow > 1.01) {
         e.preventDefault();
         const t = e.touches[0];
         scroll.scrollLeft = pan.sl - (t.clientX - pan.x);
@@ -1657,12 +1682,11 @@
       if (pinch) {
         const touches = e.touches;
         if (!touches || touches.length < 2) {
-          const next = clamp(pinch.zoom * (previewScale || 1), PDF_ZOOM_MIN, PDF_ZOOM_MAX);
-          const rect = scroll.getBoundingClientRect();
-          const midX = rect.left + Math.min(rect.width, Math.max(0, pinch.ox - scroll.scrollLeft));
-          const midY = rect.top + Math.min(rect.height, Math.max(0, pinch.oy - scroll.scrollTop));
+          const next = (liveZoom != null) ? liveZoom : state.pdfZoom;
+          const cx = pinch.cx;
+          const cy = pinch.cy;
           pinch = null;
-          commitPinchZoom(next, midX, midY);
+          commitAbsZoom(next, cx, cy);
         }
       }
       if (pan && (!e.touches || e.touches.length === 0)) {
@@ -1678,7 +1702,8 @@
     scroll.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
       if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
-      if (state.pdfZoom <= 1.01) return;
+      const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
+      if (zNow <= 1.01) return;
       mPan = { x: e.clientX, y: e.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
       scroll.classList.add("is-panning");
       e.preventDefault();
@@ -1694,20 +1719,35 @@
       scroll.classList.remove("is-panning");
     });
 
-    // Ctrl/⌘ + wheel (trackpad pinch on desktop)
+    // Ctrl/⌘ + wheel / trackpad pinch: continuous CSS, debounce crisp re-render
     scroll.addEventListener("wheel", function (e) {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const delta = e.deltaY;
-      const factor = delta > 0 ? 0.92 : 1.08;
-      commitPinchZoom(state.pdfZoom * factor, e.clientX, e.clientY);
+      const base = (liveZoom != null) ? liveZoom : state.pdfZoom;
+      // Smooth exponential factor from delta (not discrete 0.92/1.08 steps)
+      const dy = e.deltaY;
+      const intensity = (e.deltaMode === 1) ? 0.05 : 0.0018; // line vs pixel
+      const factor = Math.exp(-dy * intensity);
+      const live = clamp(base * factor, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
+      applyLivePreview(live, e.clientX, e.clientY);
+      if (wheelTimer) clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(function () {
+        wheelTimer = null;
+        const z = (liveZoom != null) ? liveZoom : state.pdfZoom;
+        commitAbsZoom(z, e.clientX, e.clientY);
+      }, 140);
     }, { passive: false });
 
     scroll.addEventListener("dblclick", function (e) {
       if (e.target && e.target.closest && e.target.closest(".zoom-btn")) return;
       e.preventDefault();
-      if (state.pdfZoom > 1.01) resetPdfZoom();
-      else commitPinchZoom(2.2, e.clientX, e.clientY);
+      const zNow = (liveZoom != null) ? liveZoom : state.pdfZoom;
+      if (zNow > 1.01) {
+        liveZoom = 1;
+        commitAbsZoom(1, e.clientX, e.clientY);
+      } else {
+        commitAbsZoom(2.2, e.clientX, e.clientY);
+      }
     });
   }
 

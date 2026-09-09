@@ -207,34 +207,67 @@
     if (widthEl) widthEl.value = String(state.inkWidth || 2.25);
   }
 
+  /** Live ink prefs: prefer control values, fall back to state (v84). */
+  function currentInkPrefs() {
+    const colorEl = $("map-ink-color");
+    const widthEl = $("map-ink-width");
+    let color = state.inkColor || "#38bdf8";
+    let width = state.inkWidth || 2.25;
+    if (colorEl && colorEl.value) color = String(colorEl.value);
+    if (widthEl && widthEl.value != null && widthEl.value !== "") {
+      const w = Number(widthEl.value);
+      if (isFinite(w) && w > 0) width = w;
+    }
+    state.inkColor = color;
+    state.inkWidth = width;
+    return { color: color, width: width };
+  }
+
+  function applyInkPrefFromControls() {
+    const prefs = currentInkPrefs();
+    saveInkPrefs();
+    return prefs;
+  }
+
   function bindInkControls() {
     loadInkPrefs();
     syncInkControlsUi();
     const colorEl = $("map-ink-color");
     const widthEl = $("map-ink-width");
-    if (colorEl && !colorEl._inkBound) {
-      colorEl._inkBound = true;
-      colorEl.addEventListener("input", function () {
-        state.inkColor = colorEl.value || "#38bdf8";
-        saveInkPrefs();
-      });
-      colorEl.addEventListener("change", function () {
-        state.inkColor = colorEl.value || "#38bdf8";
-        saveInkPrefs();
-      });
+    function onColor() {
+      state.inkColor = (colorEl && colorEl.value) || "#38bdf8";
+      saveInkPrefs();
     }
-    if (widthEl && !widthEl._inkBound) {
+    function onWidth() {
+      const w = Number(widthEl && widthEl.value);
+      if (isFinite(w) && w > 0) state.inkWidth = w;
+      saveInkPrefs();
+    }
+    if (colorEl) {
+      // Re-bind even if previously marked — toolbar may have been recreated
+      colorEl.oninput = onColor;
+      colorEl.onchange = onColor;
+      colorEl._inkBound = true;
+    }
+    if (widthEl) {
+      widthEl.oninput = onWidth;
+      widthEl.onchange = onWidth;
       widthEl._inkBound = true;
-      widthEl.addEventListener("input", function () {
-        const w = Number(widthEl.value);
-        if (isFinite(w) && w > 0) state.inkWidth = w;
-        saveInkPrefs();
-      });
-      widthEl.addEventListener("change", function () {
-        const w = Number(widthEl.value);
-        if (isFinite(w) && w > 0) state.inkWidth = w;
-        saveInkPrefs();
-      });
+    }
+    // Event delegation on under-map toolbar (survives DOM moves)
+    const bar = $("map-ref-controls");
+    if (bar && !bar._inkDelegateBound) {
+      bar._inkDelegateBound = true;
+      bar.addEventListener("input", function (e) {
+        const t = e.target;
+        if (!t) return;
+        if (t.id === "map-ink-color" || t.id === "map-ink-width") applyInkPrefFromControls();
+      }, true);
+      bar.addEventListener("change", function (e) {
+        const t = e.target;
+        if (!t) return;
+        if (t.id === "map-ink-color" || t.id === "map-ink-width") applyInkPrefFromControls();
+      }, true);
     }
   }
 
@@ -410,12 +443,8 @@
       updateMapRefVisibility();
       updateMapRestoreHint();
 
-      if (state.mapRefMeta && state.mapRefMeta.name && !state.mapRefUrl) {
-        setImportStatus(
-          "已還原 " + state.trees.length + " 棵樹與標記。請重新匯入地圖：" + state.mapRefMeta.name,
-          "warn"
-        );
-      } else {
+      // v84: do not spam status for expected map re-import after reload
+      if (state.trees.length) {
         setImportStatus("已還原 " + state.trees.length + " 棵樹（本機自動儲存）", "ok");
       }
       if (state.trees.length) selectTreeFromList(state.trees[0].id);
@@ -424,34 +453,12 @@
     }
   }
 
+  /** v84: no mid-screen「地圖無法自動還原」banner — re-import via topbar when needed. */
   function updateMapRestoreHint() {
-    let el = $("map-restore-hint");
-    const need = !!(state.mapRefMeta && state.mapRefMeta.name && !state.mapRefUrl);
-    if (!need) {
-      if (el) el.hidden = true;
-      return;
-    }
-    if (!el) {
-      const panel = $("tree-list-panel");
-      if (!panel) return;
-      el = document.createElement("div");
-      el.id = "map-restore-hint";
-      el.className = "map-restore-hint";
-      panel.insertBefore(el, panel.querySelector(".tree-list"));
-    }
-    el.hidden = false;
-    el.innerHTML = "地圖檔無法自動還原 — 請重新<strong>匯入地圖</strong>：" +
-      escapeHtml(state.mapRefMeta.name) +
-      ' <label class="btn map-restore-btn">選擇地圖' +
-      '<input type="file" accept=".pdf,image/*,application/pdf" hidden id="map-restore-file" /></label>';
-    const inp = el.querySelector("#map-restore-file");
-    if (inp && !inp._bound) {
-      inp._bound = true;
-      inp.addEventListener("change", () => {
-        const f = inp.files && inp.files[0];
-        if (f) showMapRef(f);
-        inp.value = "";
-      });
+    const el = $("map-restore-hint");
+    if (el) {
+      el.hidden = true;
+      el.innerHTML = "";
     }
   }
 
@@ -1580,7 +1587,7 @@
 
   function getMapRefMediaEl() {
     const img = $("map-ref-img");
-    // v83: do not require !hidden — src + naturalWidth is enough for composite save
+    // v84/v83: do not require !hidden — src + naturalWidth is enough for composite save
     if (img && img.getAttribute("src") && img.naturalWidth > 0) return img;
     return null;
   }
@@ -2522,6 +2529,7 @@
         : (state.inkWidth || 2.25);
       pathsHtml += '<path class="annot-draw-ink" d="' + pathToSvgD(inkPts) +
         '" fill="none" stroke="' + escapeHtml(col) + '" stroke-width="' + w +
+        '" style="stroke:' + escapeHtml(col) + ';stroke-width:' + w +
         '" vector-effect="non-scaling-stroke"></path>';
     });
     state.trees.forEach((t) => {
@@ -3088,8 +3096,15 @@
       }
       prev.removeAttribute("hidden");
       prev.setAttribute("d", pathToSvgD(pts));
-      prev.setAttribute("stroke", state.inkColor || "#38bdf8");
-      prev.setAttribute("stroke-width", String(state.inkWidth || 2.25));
+      const prefs = (gesture && gesture.inkColor)
+        ? { color: gesture.inkColor, width: gesture.inkWidth }
+        : currentInkPrefs();
+      const col = prefs.color || "#38bdf8";
+      const w = prefs.width || 2.25;
+      prev.setAttribute("stroke", col);
+      prev.setAttribute("stroke-width", String(w));
+      prev.style.stroke = col;
+      prev.style.strokeWidth = String(w);
     }
 
     function beginDrag() {
@@ -3130,6 +3145,7 @@
     }
 
     function startDraw(e, firstPct) {
+      const prefs = currentInkPrefs();
       gesture = {
         pointerId: e.pointerId,
         mode: "draw",
@@ -3142,7 +3158,9 @@
         suppressed: false,
         place: false,
         panning: false,
-        points: firstPct ? [firstPct] : []
+        points: firstPct ? [firstPct] : [],
+        inkColor: prefs.color,
+        inkWidth: prefs.width
       };
       try { viewer.setPointerCapture(e.pointerId); } catch (_) {}
       showPreview(gesture.points);
@@ -3157,10 +3175,13 @@
       suppressClickUntil = Date.now() + 450;
       if (!pts || pts.length < 2) return; // ignore tiny dots — not ink
       state.drawStrokes = state.drawStrokes || [];
+      const prefs = currentInkPrefs();
+      const strokeColor = (g && g.inkColor) || prefs.color || "#38bdf8";
+      const strokeWidth = (g && g.inkWidth) || prefs.width || 2.25;
       state.drawStrokes.push({
         path: pts,
-        color: state.inkColor || "#38bdf8",
-        width: state.inkWidth || 2.25
+        color: strokeColor,
+        width: strokeWidth
       });
       // Cap session ink so localStorage stays bounded
       if (state.drawStrokes.length > 400) {
@@ -3308,6 +3329,9 @@
           // Unzoomed finger stroke → freehand draw
           gesture.mode = "draw";
           gesture.place = false;
+          const ink = currentInkPrefs();
+          gesture.inkColor = ink.color;
+          gesture.inkWidth = ink.width;
           try { viewer.setPointerCapture(e.pointerId); } catch (_) {}
           const pct = pctFromClient(e.clientX, e.clientY);
           if (pct) gesture.points.push(pct);

@@ -634,28 +634,49 @@ body.table-collapsed .status { bottom: 12px; }
   .brand small { display: none; }
   .brand { font-size: 14px; min-width: 0; overflow: hidden; }
   .spacer { display: none; }
+  /* v84: single-row topbar — 匯出目錄 Excel 平排其他選項；橫向捲動 */
   .topbar {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
-    grid-template-areas:
-      "menu brand"
-      "acts acts";
+    display: flex;
+    flex-wrap: nowrap;
     align-items: center;
-    column-gap: 8px;
-    row-gap: 6px;
-    padding: 6px 10px;
-    padding-top: calc(6px + env(safe-area-inset-top));
+    gap: 6px;
+    padding: 4px 8px;
+    padding-top: calc(4px + env(safe-area-inset-top));
+    overflow: hidden;
+    min-height: 0;
+  }
+  #btn-menu { flex: 0 0 auto; }
+  .brand {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 88px;
     overflow: hidden;
   }
-  #btn-menu { grid-area: menu; }
-  .brand { grid-area: brand; }
+  .brand .logo { width: 22px; height: 22px; }
+  .brand > div { overflow: hidden; text-overflow: ellipsis; }
   .top-actions {
-    grid-area: acts;
-    width: 100%;
-    justify-content: flex-end;
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    scrollbar-width: none;
   }
-  .btn, select { min-height: 40px; font-size: 14px; }
+  .top-actions::-webkit-scrollbar { display: none; }
+  .top-actions .btn,
+  .top-actions label.btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding-left: 7px;
+    padding-right: 7px;
+    font-size: 11px;
+    min-height: 32px;
+  }
+  .btn, select { min-height: 36px; font-size: 13px; }
   .layer-row { padding: 10px 6px; }
   .leaflet-control-zoom a { width: 36px !important; height: 36px !important; line-height: 36px !important; }
 
@@ -1258,7 +1279,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v83: edit overlay white/black + page lock. v82: pinch-only zoom (no ±). v78: hide imported media names */
+/* v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
 .media-nums {
   display: none !important;
 }
@@ -1801,21 +1822,10 @@ body.edit-overlay-open .tree-list-edit-overlay {
   white-space: nowrap;
   border: 0;
 }
-body.media-layout .map-restore-hint {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--muted);
-  padding: 2px 0 4px;
-}
+/* v84: mid-panel「地圖無法自動還原」banner removed — re-import via topbar */
+body.media-layout .map-restore-hint,
 .map-restore-hint {
-  margin: 0 0 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  color: #8a6a10;
-  font-size: 12px;
-  line-height: 1.4;
+  display: none !important;
 }
 .map-restore-hint[hidden] { display: none !important; }
 .map-restore-btn {
@@ -2036,12 +2046,17 @@ body.has-map-ref .status {
   z-index: 900;
 }
 
-/* Slightly tighter top actions on iPad landscape */
+/* v84: keep single-row top actions on iPad landscape */
 @media (max-width: 1180px) and (orientation: landscape) {
-  .top-actions .btn {
-    padding-left: 8px;
-    padding-right: 8px;
-    font-size: 12px;
+  .top-actions {
+    flex-wrap: nowrap;
+  }
+  .top-actions .btn,
+  .top-actions label.btn {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 11px;
+    min-height: 30px;
   }
   /* spreadsheet tree-list scrolls inside panel */
 }
@@ -2180,9 +2195,7 @@ body.annotate-mode.has-map-ref #map {
 }
 .annot-draw-ink {
   fill: none;
-  stroke: #38bdf8; /* overridden per-stroke via attributes when set */
-  /* Match preview (~2.25px screen) — 0.55 + non-scaling-stroke was invisible on iPad */
-  stroke-width: 2.25;
+  /* stroke + stroke-width come from inline style / attributes (live ink prefs) */
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.92;
@@ -2205,8 +2218,7 @@ body.annotate-mode.has-map-ref #map {
 }
 .annot-ink-preview {
   pointer-events: none;
-  stroke: #38bdf8; /* live preview follows ink prefs via attributes */
-  stroke-width: 2.25;
+  /* stroke + stroke-width from inline style (live ink prefs) — do not hardcode */
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.92;
