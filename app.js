@@ -2930,7 +2930,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=91").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=92").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

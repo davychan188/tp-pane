@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v91: after map/excel import close mobile sidebar + CSS collapses Import card; portrait stack ≤1024. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v92: restore v90 portrait layout (≤700); keep close menu after import. v91 ≤1024 stack reverted. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -2542,7 +2542,7 @@
     setImportStatus("已清除地圖參考", "");
   }
 
-  /** v91: on tablet/phone overlay sidebar, close menu after map/excel load so Import card cannot cover tree list. */
+  /** v92: on tablet/phone overlay sidebar, close menu after map/excel load so Import card cannot cover tree list. */
   function closeMobileMenuAfterContent() {
     try {
       if (!window.matchMedia("(max-width: 1180px)").matches) return;
