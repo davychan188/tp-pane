@@ -2910,8 +2910,27 @@
   // Resize map when sidebar changes
   window.addEventListener("resize", () => map.invalidateSize());
 
+  // v85: Safari legacy gesture events — block document pinch-zoom except map-ref / media PDF (JS handles those)
+  (function lockDocumentPinchZoom() {
+    const ALLOW = "#map-ref-viewer, #map-ref-zoom-stage, #media-pdf-scroll, .media-pdf-stage, .media-viewer, .media-frame, #map, .leaflet-container, .map-annotate-layer";
+    function isZoomSurface(t) {
+      try {
+        return !!(t && t.closest && t.closest(ALLOW));
+      } catch (e) {
+        return false;
+      }
+    }
+    function onGesture(e) {
+      if (isZoomSurface(e.target)) return;
+      e.preventDefault();
+    }
+    document.addEventListener("gesturestart", onGesture, { passive: false, capture: true });
+    document.addEventListener("gesturechange", onGesture, { passive: false, capture: true });
+    document.addEventListener("gestureend", onGesture, { passive: false, capture: true });
+  })();
+
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=84").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=85").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

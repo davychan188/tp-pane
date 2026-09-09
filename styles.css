@@ -22,6 +22,7 @@
 }
 
 * { box-sizing: border-box; }
+/* v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -30,6 +31,10 @@ html, body {
   overflow: hidden;
   width: 100%;
   max-width: 100%;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 body {
   display: grid;
@@ -72,6 +77,7 @@ body.table-collapsed .table-hint {
   padding-top: env(safe-area-inset-top);
   background: linear-gradient(180deg, var(--chrome), var(--chrome-2));
   border-bottom: 1px solid var(--line);
+  touch-action: manipulation; /* v85: chrome must not page-pinch */
 }
 .icon-btn { min-width: 40px; min-height: 40px; padding: 6px 10px; font-size: 18px; }
 #btn-menu { display: none; }
@@ -1208,6 +1214,7 @@ body.media-layout.table-collapsed .feature-attrs {
   min-width: 100%;
   transform-origin: 0 0;
   will-change: transform;
+  touch-action: none; /* v85: JS pinch must receive multi-touch */
 }
 .media-pdf-canvas {
   display: block;
@@ -1279,7 +1286,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
+/* v85: document pinch locked (viewport+touch-action+gesture). v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
 .media-nums {
   display: none !important;
 }
@@ -1537,6 +1544,7 @@ body.has-tree-list .tree-list-panel,
   padding: 0;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-x pan-y; /* v85: scroll/pan only — no document pinch */
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-2);
