@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v96: labels stay ON by default; hard-cap + chunked rAF apply (no freeze on 顯示編號).
+   v97: hide tree ID labels during Leaflet zoom; restore after zoom settles. v96: GPKG labels ON + hard-cap + chunked apply.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -36,6 +36,7 @@
     showLabels: true,
     labelField: "",
     labelMinZoom: DEFAULT_LABEL_MIN_ZOOM,
+    labelsSuspended: false,
     tablePage: 0,
     tablePageLayerKey: null,
     markerSize: 4,
@@ -824,7 +825,7 @@
   }
 
   function labelsShouldShow() {
-    return !!(state.showLabels && map.getZoom() >= state.labelMinZoom);
+    return !!(state.showLabels && !state.labelsSuspended && map.getZoom() >= state.labelMinZoom);
   }
 
   const measureCanvas = document.createElement("canvas");
@@ -3121,12 +3122,18 @@
     applyAllLabels();
   });
 
-  function setTooltipPaneHidden(hidden) {
+  function setZoomLabelHide(hide) {
+    state.labelsSuspended = !!hide;
+    try { document.body.classList.toggle("tp-map-zooming", !!hide); } catch (_) {}
     const pane = map.getPane("tooltipPane");
-    if (pane) pane.style.visibility = hidden ? "hidden" : "";
+    if (pane) {
+      pane.style.visibility = hide ? "hidden" : "";
+      pane.style.opacity = hide ? "0" : "";
+    }
   }
   map.on("zoomstart", function () {
-    setTooltipPaneHidden(true);
+    cancelLabelApply();
+    setZoomLabelHide(true);
     const wrap = $("table-wrap");
     if (wrap && isCatalogOpen()) wrap.style.display = "none";
   });
@@ -3135,13 +3142,16 @@
     if (zoomSizeTimer) clearTimeout(zoomSizeTimer);
     zoomSizeTimer = setTimeout(function () {
       applyMarkerRadii();
+      setZoomLabelHide(false);
       scheduleLabelUpdate();
-      setTooltipPaneHidden(false);
       const wrap = $("table-wrap");
       if (wrap && isCatalogOpen()) wrap.style.display = "";
-    }, IS_TOUCH ? 220 : 40);
+    }, IS_TOUCH ? 260 : 60);
   });
-  map.on("moveend resize", scheduleLabelUpdate);
+  map.on("moveend resize", function () {
+    if (state.labelsSuspended) return;
+    scheduleLabelUpdate();
+  });
 
   // Keyboard
   document.addEventListener("keydown", (e) => {
@@ -3174,7 +3184,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=96").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=97").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

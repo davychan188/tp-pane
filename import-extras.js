@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v96: GPKG label UX in app.js (stay ON, hard-cap, chunked); annotate 加樹 labels unchanged. v95: GPKG lag fixes in app.js (labels/table). v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v97: hide annot labels during map-ref pinch zoom; GPKG zoom hide in app.js. v96: GPKG label UX in app.js. v95: GPKG lag fixes in app.js. v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -2230,6 +2230,10 @@
    * the untransformed box, which broke Apple Pencil above ~1.9×.
    * state.mapRefZoom.x/y are scroll offsets (CSS px).
    */
+
+  function setMapRefZoomingLabels(hide) {
+    try { document.body.classList.toggle("tp-mapref-zooming", !!hide); } catch (_) {}
+  }
   function applyMapRefZoom() {
     if (state._mapRefZoomApplying) return;
     const viewer = $("map-ref-viewer");
@@ -2343,6 +2347,7 @@
       if (!e.touches) return;
       if (e.touches.length === 2) {
         const m = midLocal(e.touches[0], e.touches[1]);
+        setMapRefZoomingLabels(true);
         pinch = {
           dist: dist(e.touches[0], e.touches[1]),
           scale: state.mapRefZoom.scale,
@@ -2408,6 +2413,7 @@
       if (state.mapRefZoom.scale <= 1.01) resetMapRefZoom();
       pinch = null;
       pan = null;
+      setMapRefZoomingLabels(false);
     }, { passive: true });
 
     // Keep state.x/y in sync if programmatic/native scroll ever happens

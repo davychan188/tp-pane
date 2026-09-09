@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v96: GPKG labels stay ON with hard-cap + chunked apply (app.js). v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v97: hide labels while map zooming (.tp-map-zooming). v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -753,6 +753,18 @@ body.table-collapsed .status { bottom: 12px; }
   body:not(.table-collapsed) {
     grid-template-rows: auto 1fr var(--table-h, 36vh);
   }
+}
+
+
+/* v97: while zooming, hide tree ID labels (Leaflet + annotate overlay) */
+body.tp-map-zooming .leaflet-tooltip-pane,
+body.tp-map-zooming .leaflet-tooltip.map-id-label,
+body.tp-map-zooming .annot-leaflet-label,
+body.tp-map-zooming .annot-marker-label,
+body.tp-mapref-zooming .annot-marker-label {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* ===== Media panel + iPad landscape split (arboriculture fork) ===== */
