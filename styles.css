@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1286,7 +1286,7 @@ body.media-layout.table-collapsed .feature-attrs {
 .media-pdf-open-tab[hidden] { display: none !important; }
 
 /* v77: #01/#02 page chips removed — jump via 「第 N/M 頁」 */
-/* v86: map crop + multi-sheet. v85: document pinch locked. v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
+/* v87: remove map/media export hints. v86: map crop + multi-sheet. v85: document pinch locked. v84: single-row topbar; ink stroke via inline style. v83: edit overlay white/black + page lock. v82: pinch-only zoom */
 .media-nums {
   display: none !important;
 }
@@ -1901,15 +1901,6 @@ body.media-layout .map-restore-hint,
   white-space: nowrap;
   color: var(--tag-fg);
   font-size: 11px;
-}
-.map-ref-hint {
-  flex: 1 1 100%;
-  margin: 0;
-  padding: 0 2px 2px;
-  font-size: 10px;
-  color: var(--muted);
-  font-weight: 500;
-  line-height: 1.35;
 }
 .map-ref-actions {
   display: flex;
@@ -2544,16 +2535,6 @@ body.hide-media #btn-toggle-media {
   min-height: 32px;
   display: inline-flex;
   align-items: center;
-}
-.media-save-hint,
-.map-ref-hint {
-  flex: 1 1 100%;
-  margin: 0;
-  padding: 0 2px 2px;
-  font-size: 10px;
-  color: var(--muted);
-  font-weight: 500;
-  line-height: 1.35;
 }
 .media-frame {
   box-shadow: 0 6px 18px rgba(26, 36, 32, 0.12) !important;

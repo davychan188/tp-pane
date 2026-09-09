@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=86" />
-  <link rel="stylesheet" href="styles.css?v=86" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=87" />
+  <link rel="stylesheet" href="styles.css?v=87" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -130,7 +130,6 @@
         </div>
         <button class="btn full" type="button" id="btn-annot-export" title="Export tree list CSV">匯出列表 CSV</button>
         <button class="btn full" type="button" id="btn-annot-export-xlsx" title="Export tree list Excel · 樹種／DBH／H／S／備註／建議">匯出 Excel</button>
-        <div class="hint" id="annot-hint">地圖可直接用 Pencil／手指畫墨跡（不加樹）。要加樹請開「加樹模式」再短點地圖。儲存：清單→匯出 Excel／CSV；地圖墨跡→儲存地圖；媒體→下載 PDF。</div>
       </div>
     </div>
 
@@ -230,7 +229,6 @@
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
       </div>
       <div class="map-sheet-tabs" id="map-sheet-tabs" hidden role="tablist" aria-label="地圖圖紙"></div>
-      <p class="map-ref-hint">清單→匯出 Excel／CSV；地圖墨跡→儲存地圖圖檔；裁切→新增圖紙分別畫記；媒體→下載 PDF</p>
     </div>
   </div>
   <div class="annot-float-bar" id="annot-float-bar" hidden title="加樹工具（地圖左下；主控制在左側欄）">
@@ -325,17 +323,16 @@
         <a class="btn media-pdf-download" id="media-pdf-download" href="#" hidden title="下載目前已匯入的 PDF 原檔">下載</a>
       </div>
       <div class="media-nums" id="media-pdf-nums" aria-label="頁碼" hidden></div>
-      <p class="media-save-hint">媒體→下載 PDF（原檔）；地圖墨跡→儲存地圖；清單→匯出 Excel／CSV</p>
     </div>
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=86"></script>
-  <script src="vendor/geopackage.min.js?v=86"></script>
-  <script src="vendor/xlsx.full.min.js?v=86"></script>
-  <script src="vendor/pdf.min.js?v=86"></script>
-  <script src="media.js?v=86"></script>
-  <script src="import-extras.js?v=86"></script>
-  <script src="app.js?v=86"></script>
+  <script src="vendor/leaflet.js?v=87"></script>
+  <script src="vendor/geopackage.min.js?v=87"></script>
+  <script src="vendor/xlsx.full.min.js?v=87"></script>
+  <script src="vendor/pdf.min.js?v=87"></script>
+  <script src="media.js?v=87"></script>
+  <script src="import-extras.js?v=87"></script>
+  <script src="app.js?v=87"></script>
 </body>
 </html>

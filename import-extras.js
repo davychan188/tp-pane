@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v86: map crop + multi-sheet (per-sheet ink).
+ * v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -2699,16 +2699,7 @@
   }
 
   function updateAnnotUi() {
-    const hint = $("annot-hint");
-    if (hint) {
-      if (state.annotateMode) {
-        hint.textContent = state.idMode === "manual"
-          ? "加樹（手動）：短點地圖後輸入 ID。自由畫＝純墨跡（不加樹）。長按標記可拖移；雙指縮放／平移。"
-          : "加樹（自動）：短點地圖 → T1、T2…。自由畫＝純墨跡（不加樹）。長按標記可拖移；雙指縮放／平移。";
-      } else {
-        hint.textContent = "地圖可直接用 Pencil／手指畫墨跡（不加樹）。要加樹請開「加樹模式」再短點地圖。PNG／JPG 最佳。";
-      }
-    }
+    /* v87: annot-hint instructional copy removed */
   }
 
   function pctFromEvent(el, clientX, clientY) {
