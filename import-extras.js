@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v98: GPKG sidebar above map-ref (styles). v97: hide annot labels during map-ref pinch zoom; GPKG zoom hide in app.js. v96: GPKG label UX in app.js. v95: GPKG lag fixes in app.js. v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
+ * v99: syncTreeListHighlight scrolls + fuzzy tree ID match from GPKG map tap. v98: GPKG sidebar above map-ref (styles). v97: hide annot labels during map-ref pinch zoom; GPKG zoom hide in app.js. v96: GPKG label UX in app.js. v95: GPKG lag fixes in app.js. v94: default grid map|PDF + full-width bottom panel; keep close menu after import. v90: nextAutoId only among annotate-sourced T# (first free gap). v89: always show tree ID labels on map annotate + Leaflet markers. v88: 加樹 short-tap places tree (pen/mouse pending; draw no longer steals tap). v87: remove export/download workflow hint copy. v86: map crop + multi-sheet (per-sheet ink).
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -2623,16 +2623,35 @@
     schedulePersist();
   }
 
-  function syncTreeListHighlight(treeId) {
+  function normalizeTreeId(v) {
+    if (v == null || v === "") return "";
+    let s = String(v).trim().toUpperCase().replace(/\s+/g, "");
+    s = s.replace(/^T[\-_]?/, "T");
+    const m = s.match(/^T0*(\d+)$/);
+    if (m) return "T" + m[1];
+    const n = s.match(/^0*(\d+)$/);
+    if (n) return "T" + n[1];
+    return s;
+  }
+
+  function syncTreeListHighlight(treeId, opts) {
     const box = $("tree-list");
     if (!box || !state.trees.length) return;
+    const want = treeId ? normalizeTreeId(treeId) : "";
+    let matched = null;
     Array.prototype.forEach.call(box.querySelectorAll(".tree-list-row"), (el) => {
       const id = el.getAttribute("data-tree-id");
-      const on = treeId && String(id).toUpperCase() === String(treeId).toUpperCase();
+      const on = !!(want && normalizeTreeId(id) === want);
       el.classList.toggle("on", on);
       el.setAttribute("aria-selected", on ? "true" : "false");
+      if (on) matched = el;
     });
-    highlightAnnotMarker(treeId);
+    if (matched && (!opts || opts.scroll !== false)) {
+      try { matched.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (_) {}
+    }
+    // Prefer original list id for annotate highlight
+    const showId = matched ? matched.getAttribute("data-tree-id") : treeId;
+    highlightAnnotMarker(showId);
   }
 
   function clearTreeList() {

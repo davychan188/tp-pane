@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v98: sidebar above map-ref PDF when ☰ open. v97: hide tree ID labels during Leaflet zoom; restore after zoom settles. v96: GPKG labels ON + hard-cap + chunked apply.
+   v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -815,6 +815,18 @@
     return anyId || keys[0];
   }
 
+  /** Normalize tree IDs for match: T07 / T-7 / t7 → T7 */
+  function normalizeTreeId(v) {
+    if (v == null || v === "") return "";
+    let s = String(v).trim().toUpperCase().replace(/\s+/g, "");
+    s = s.replace(/^T[\-_]?/, "T");
+    const m = s.match(/^T0*(\d+)$/);
+    if (m) return "T" + m[1];
+    const n = s.match(/^0*(\d+)$/);
+    if (n) return "T" + n[1];
+    return s;
+  }
+
   function labelText(feature, field) {
     if (!field || !feature) return "";
     const props = feature.properties || {};
@@ -1206,16 +1218,38 @@
     if (idx < 0) {
       const key = (marker.feature.properties || {})._origKey;
       const fid = (marker.feature.properties || {}).fid;
-      const tid = (marker.feature.properties || {})["Tree ID"] || (marker.feature.properties || {}).tree_no;
+      const tid = normalizeTreeId(
+        labelText(marker.feature, state.labelField) ||
+        (marker.feature.properties || {})["Tree ID"] ||
+        (marker.feature.properties || {}).tree_no
+      );
       for (let i = 0; i < ly.features.length; i++) {
         const p = ly.features[i].properties || {};
-        if ((key && p._origKey === key) || (fid != null && p.fid === fid) || (tid && (p["Tree ID"] === tid || p.tree_no === tid))) {
+        const ptid = normalizeTreeId(
+          labelText(ly.features[i], state.labelField) || p["Tree ID"] || p.tree_no || p.ID
+        );
+        if ((key && p._origKey === key) || (fid != null && p.fid === fid) || (tid && ptid && tid === ptid)) {
           idx = i;
           break;
         }
       }
     }
     if (idx >= 0) highlightCatalogRowByIndex(idx);
+  }
+
+  /** After map tap: open bottom GPKG catalog if needed, highlight row, sync Excel tree list. */
+  function revealSelectionInBottomList(marker) {
+    if (!marker) return;
+    const hasTreeList = document.body.classList.contains("has-tree-list");
+    if (!hasTreeList) {
+      if (!isCatalogOpen()) setCatalogOpen(true);
+      // Defer until table DOM exists after expand
+      setTimeout(function () {
+        highlightCatalogRowForMarker(marker);
+      }, 40);
+    } else {
+      highlightCatalogRowForMarker(marker);
+    }
   }
 
   function selectMarker(marker) {
@@ -1252,7 +1286,7 @@
       props.TREE_ID || props.ID || props.id || null;
     window.GpkgMedia.setSelectedTree(id, props);
     if (window.GpkgImport && window.GpkgImport.syncTreeListHighlight) {
-      window.GpkgImport.syncTreeListHighlight(id);
+      window.GpkgImport.syncTreeListHighlight(id, { scroll: true });
     }
   }
 
@@ -1368,7 +1402,7 @@
     }
     lastTap = { layer: layer, t: now };
     selectMarker(layer);
-    highlightCatalogRowForMarker(layer);
+    revealSelectionInBottomList(layer);
   }
 
   function attachEditHandlers(layer) {
@@ -3184,7 +3218,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=98").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=99").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
