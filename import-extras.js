@@ -941,11 +941,15 @@
     if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
       setTimeout(function () { window.GpkgViewer.invalidateMap(); }, 60);
     }
-    if (window.GpkgMedia && typeof window.GpkgMedia.reflowLayout === "function") {
-      setTimeout(function () { window.GpkgMedia.reflowLayout(); }, 80);
-    } else {
-      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+    function kickMedia() {
+      if (window.GpkgMedia && typeof window.GpkgMedia.reflowLayout === "function") {
+        window.GpkgMedia.reflowLayout();
+      } else {
+        try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+      }
     }
+    setTimeout(kickMedia, 80);
+    setTimeout(kickMedia, 220);
   }
 
   function applyHideMap(hide) {

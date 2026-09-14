@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v102: freehand Pencil ink on PDF stage; v100: finger swipe L/R to change PDF page when not zoomed; v99: map→list sync in app; v96: label UX; v95: GPKG lag; v90 annotate ids).
+ * Media panel: PDF page viewer via pdf.js canvas (v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -244,7 +244,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=102";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=103";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -713,7 +713,16 @@
   }
 
   function reflowLayout() {
-    applyPdfZoom();
+    // Double rAF so hide-map grid has settled before measuring scroll width
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        applyPdfZoom();
+        const scroll = $("media-pdf-scroll");
+        if (scroll) {
+          try { scroll.style.touchAction = "none"; } catch (_) {}
+        }
+      });
+    });
   }
 
   async function renderPdfCanvas() {
@@ -1969,13 +1978,20 @@
 
     scroll.addEventListener("touchmove", function (e) {
       if (!e.touches) return;
-      if (e.touches.length === 2 && pinch) {
+      // Two-finger always wins — late-start pinch if touchstart only saw 1 finger first
+      if (e.touches.length === 2) {
         e.preventDefault();
+        swipe = null;
+        pan = null;
+        scroll.classList.remove("is-panning");
         const d = touchDist(e.touches[0], e.touches[1]);
-        const factor = d / pinch.dist;
-        const live = clamp(pinch.zoom * factor, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
         const mid = midPoint(e.touches[0], e.touches[1]);
-        // Transform-only — do not re-render or fight scroll each frame
+        if (!pinch) {
+          const base = (liveZoom != null) ? liveZoom : state.pdfZoom;
+          pinch = { dist: d || 1, zoom: base, cx: mid.x, cy: mid.y };
+        }
+        const factor = d / (pinch.dist || 1);
+        const live = clamp(pinch.zoom * factor, PDF_ZOOM_MIN, PDF_ZOOM_MAX);
         applyLivePreview(live, mid.x, mid.y);
         return;
       }
