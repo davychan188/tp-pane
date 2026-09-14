@@ -3200,7 +3200,7 @@
 
   // v85: Safari legacy gesture events — block document pinch-zoom except map-ref / media PDF (JS handles those)
   (function lockDocumentPinchZoom() {
-    const ALLOW = "#map-ref-viewer, #map-ref-zoom-stage, #media-pdf-scroll, .media-pdf-stage, .media-viewer, .media-frame, #map, .leaflet-container, .map-annotate-layer";
+    const ALLOW = "#map-ref-viewer, #map-ref-zoom-stage, #media-pdf-scroll, .media-pdf-stage, #media-pdf-ink-layer, .media-viewer, .media-frame, #map, .leaflet-container, .map-annotate-layer";
     function isZoomSurface(t) {
       try {
         return !!(t && t.closest && t.closest(ALLOW));
@@ -3218,7 +3218,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=101").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=102").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
+ * v102: hide-map + tree-list PDF import. v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -44,6 +44,7 @@
 
   const LS_SESSION = "tp-pane-session-trees";
   const LS_HIDE_MEDIA = "tp-pane-hide-media";
+  const LS_HIDE_MAP = "tp-pane-hide-map";
   const LS_INK_PREFS = "tp-pane-ink-prefs";
   const LS_COL_MAP = "tp-pane-excel-col-map";
   let persistTimer = null;
@@ -915,7 +916,10 @@
       btn.title = hide ? "顯示樹木 PDF（右側）" : "隱藏樹木 PDF（地圖可擴展）";
     }
     try { localStorage.setItem(LS_HIDE_MEDIA, hide ? "1" : "0"); } catch (_) {}
-    if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
+    // Map invalidate + media PDF canvas reflow (shared helper defined below / used after init)
+    if (typeof reflowAfterLayoutToggle === "function") {
+      reflowAfterLayoutToggle();
+    } else if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
       setTimeout(() => window.GpkgViewer.invalidateMap(), 60);
     }
   }
@@ -931,6 +935,64 @@
         applyHideMedia(!document.body.classList.contains("hide-media"));
       });
     }
+  }
+
+  function reflowAfterLayoutToggle() {
+    if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
+      setTimeout(function () { window.GpkgViewer.invalidateMap(); }, 60);
+    }
+    if (window.GpkgMedia && typeof window.GpkgMedia.reflowLayout === "function") {
+      setTimeout(function () { window.GpkgMedia.reflowLayout(); }, 80);
+    } else {
+      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+    }
+  }
+
+  function applyHideMap(hide) {
+    hide = !!hide;
+    document.body.classList.toggle("hide-map", hide);
+    const btn = $("btn-toggle-map");
+    if (btn) {
+      btn.textContent = hide ? "顯示地圖" : "隱藏地圖";
+      btn.setAttribute("aria-pressed", hide ? "true" : "false");
+      btn.title = hide ? "顯示地圖（左側）" : "隱藏地圖（樹木 PDF 可擴展）";
+    }
+    try { localStorage.setItem(LS_HIDE_MAP, hide ? "1" : "0"); } catch (_) {}
+    reflowAfterLayoutToggle();
+  }
+
+  function initHideMapToggle() {
+    let hide = false;
+    try { hide = localStorage.getItem(LS_HIDE_MAP) === "1"; } catch (_) {}
+    applyHideMap(hide);
+    const btn = $("btn-toggle-map");
+    if (btn && !btn._hideBound) {
+      btn._hideBound = true;
+      btn.addEventListener("click", () => {
+        applyHideMap(!document.body.classList.contains("hide-map"));
+      });
+    }
+  }
+
+  /** Tree list 「匯入 PDF」 → same media ingest stack; auto-show media panel if hidden. */
+  function initTreeListPdfImport() {
+    const input = $("tree-list-pdf-input");
+    if (!input || input._listPdfBound) return;
+    input._listPdfBound = true;
+    input.addEventListener("change", function () {
+      const files = input.files;
+      if (!files || !files.length) return;
+      if (document.body.classList.contains("hide-media")) {
+        applyHideMedia(false);
+      }
+      if (window.GpkgMedia && typeof window.GpkgMedia.ingestFiles === "function") {
+        window.GpkgMedia.ingestFiles(files);
+      } else {
+        setImportStatus("媒體面板尚未就緒，無法匯入 PDF", "warn");
+      }
+      input.value = "";
+      reflowAfterLayoutToggle();
+    });
   }
 
   function renameTreeId(oldId, newId) {
@@ -4157,6 +4219,8 @@
     const treeBox = $("tree-list");
     if (treeBox) bindTreeListInteractions(treeBox);
     initHideMediaToggle();
+    initHideMapToggle();
+    initTreeListPdfImport();
 
     function bindExcelInput(el) {
       if (!el) return;
@@ -4305,6 +4369,7 @@
     persistSession: persistSession,
     restoreSession: restoreSession,
     applyHideMedia: applyHideMedia,
+    applyHideMap: applyHideMap,
     isAnnotateMode: function () { return !!state.annotateMode; },
     setAnnotateMode: setAnnotateMode,
     handleLeafletClick: handleLeafletClick,

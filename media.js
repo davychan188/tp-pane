@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v100: finger swipe L/R to change PDF page when not zoomed; v99: map→list sync in app; v96: label UX; v95: GPKG lag; v90 annotate ids).
+ * Media panel: PDF page viewer via pdf.js canvas (v102: freehand Pencil ink on PDF stage; v100: finger swipe L/R to change PDF page when not zoomed; v99: map→list sync in app; v96: label UX; v95: GPKG lag; v90 annotate ids).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -71,8 +71,17 @@
     pdfRenderToken: 0,
     pdfRenderTask: null,
     pdfRenderTimer: null,
-    pdfjsReady: false
+    pdfjsReady: false,
+    // v102: freehand ink per PDF+page (percent of stage layout box)
+    inkByKey: {},       // { [inkKey]: [{ path, color?, width? }] }
+    inkStrokes: [],     // current page strokes
+    inkKey: null,
+    inkDrawing: false
   };
+
+  const LS_MEDIA_INK = "tp-pane-media-ink";
+  const MEDIA_INK_MAX_STROKES = 300;
+  const MEDIA_INK_MAX_KEYS = 40;
 
   const PHOTO_ZOOM_MIN = 1;
   const PHOTO_ZOOM_MAX = 8;
@@ -235,7 +244,7 @@
     try {
       const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
       const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=101";
+      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=102";
       state.pdfjsReady = true;
     } catch (e) {
       console.warn("pdf.js worker config failed", e);
@@ -421,6 +430,292 @@
     try { await prev.promise; } catch (e) { /* ignore cancel */ }
   }
 
+
+  function mediaInkKey(pdf, page) {
+    const name = (pdf && pdf.name) ? String(pdf.name).trim().toLowerCase() : "";
+    const url = (pdf && pdf.url) ? String(pdf.url) : "";
+    const id = name || url || "pdf";
+    const pg = page || state.pdfPage || 1;
+    return id + "::" + pg;
+  }
+
+  function mediaInkPrefs() {
+    let color = "#38bdf8";
+    let width = 2.25;
+    try {
+      if (window.GpkgImport && window.GpkgImport.getState) {
+        const s = window.GpkgImport.getState();
+        if (s && s.inkColor) color = String(s.inkColor);
+        if (s && isFinite(Number(s.inkWidth)) && Number(s.inkWidth) > 0) width = Number(s.inkWidth);
+      }
+    } catch (_) {}
+    const colorEl = $("map-ink-color");
+    const widthEl = $("map-ink-width");
+    if (colorEl && colorEl.value) color = String(colorEl.value);
+    if (widthEl && widthEl.value != null && widthEl.value !== "") {
+      const w = Number(widthEl.value);
+      if (isFinite(w) && w > 0) width = w;
+    }
+    return { color: color, width: width };
+  }
+
+  function normalizeMediaStroke(s) {
+    if (!s || !Array.isArray(s.path) || !s.path.length) return null;
+    const pts = s.path.map(function (p) {
+      return { x: Number(p.x), y: Number(p.y) };
+    }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); });
+    if (pts.length < 2) return null;
+    const out = { path: pts };
+    if (s.color) out.color = String(s.color);
+    const w = Number(s.width);
+    if (isFinite(w) && w > 0) out.width = w;
+    return out;
+  }
+
+  function simplifyMediaPath(pts) {
+    if (!pts || pts.length < 3) return pts ? pts.slice() : null;
+    const out = [pts[0]];
+    const EPS = 0.12;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = out[out.length - 1];
+      const b = pts[i];
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= EPS) out.push(b);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+
+  function pathToMediaSvgD(pts) {
+    if (!pts || !pts.length) return "";
+    let d = "M " + Number(pts[0].x).toFixed(3) + " " + Number(pts[0].y).toFixed(3);
+    for (let i = 1; i < pts.length; i++) {
+      d += " L " + Number(pts[i].x).toFixed(3) + " " + Number(pts[i].y).toFixed(3);
+    }
+    return d;
+  }
+
+  function saveMediaInkBag() {
+    try {
+      const bag = state.inkByKey || {};
+      const keys = Object.keys(bag);
+      // Bound keys
+      let keep = keys;
+      if (keep.length > MEDIA_INK_MAX_KEYS) keep = keep.slice(-MEDIA_INK_MAX_KEYS);
+      const out = {};
+      let total = 0;
+      keep.forEach(function (k) {
+        const list = (bag[k] || []).map(normalizeMediaStroke).filter(Boolean);
+        if (!list.length) return;
+        const capped = list.slice(-Math.max(20, Math.floor(MEDIA_INK_MAX_STROKES / Math.max(1, keep.length))));
+        out[k] = capped;
+        total += capped.length;
+      });
+      // Global cap
+      if (total > MEDIA_INK_MAX_STROKES) {
+        const kk = Object.keys(out);
+        while (total > MEDIA_INK_MAX_STROKES && kk.length) {
+          const k0 = kk.shift();
+          const drop = Math.min(out[k0].length, total - MEDIA_INK_MAX_STROKES);
+          out[k0] = out[k0].slice(drop);
+          total -= drop;
+          if (!out[k0].length) delete out[k0];
+        }
+      }
+      localStorage.setItem(LS_MEDIA_INK, JSON.stringify(out));
+    } catch (_) {}
+  }
+
+  function loadMediaInkBag() {
+    try {
+      const raw = localStorage.getItem(LS_MEDIA_INK);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") return;
+      const bag = {};
+      Object.keys(data).forEach(function (k) {
+        if (!Array.isArray(data[k])) return;
+        const strokes = data[k].map(normalizeMediaStroke).filter(Boolean);
+        if (strokes.length) bag[k] = strokes;
+      });
+      state.inkByKey = bag;
+    } catch (_) {}
+  }
+
+  function saveCurrentMediaInk() {
+    const key = state.inkKey;
+    if (!key) return;
+    state.inkByKey = state.inkByKey || {};
+    state.inkByKey[key] = (state.inkStrokes || []).map(normalizeMediaStroke).filter(Boolean);
+    saveMediaInkBag();
+  }
+
+  function loadMediaInkForCurrent() {
+    const pdf = currentPdf();
+    const key = mediaInkKey(pdf, state.pdfPage || 1);
+    if (state.inkKey && state.inkKey !== key) saveCurrentMediaInk();
+    state.inkKey = key;
+    const bag = state.inkByKey || {};
+    state.inkStrokes = (Array.isArray(bag[key]) ? bag[key] : []).map(normalizeMediaStroke).filter(Boolean);
+    renderMediaInkOverlay();
+  }
+
+  function ensureMediaInkLayer() {
+    const stage = $("media-pdf-stage");
+    if (!stage) return null;
+    let layer = $("media-pdf-ink-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "media-pdf-ink-layer";
+      layer.className = "media-pdf-ink-layer";
+      layer.setAttribute("aria-hidden", "true");
+      stage.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function renderMediaInkOverlay() {
+    const layer = ensureMediaInkLayer();
+    if (!layer) return;
+    let paths = "";
+    (state.inkStrokes || []).forEach(function (s) {
+      if (!s || !s.path || s.path.length < 2) return;
+      const col = (s.color && String(s.color)) || "#38bdf8";
+      const w = (isFinite(Number(s.width)) && Number(s.width) > 0) ? Number(s.width) : 2.25;
+      paths += '<path class="media-draw-ink" d="' + pathToMediaSvgD(s.path) +
+        '" fill="none" stroke="' + col.replace(/"/g, "") + '" stroke-width="' + w +
+        '" style="stroke:' + col.replace(/"/g, "") + ';stroke-width:' + w +
+        '" vector-effect="non-scaling-stroke"></path>';
+    });
+    layer.innerHTML =
+      '<svg class="media-ink-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' +
+      paths +
+      '<path class="media-ink-preview" hidden fill="none" vector-effect="non-scaling-stroke"></path>' +
+      "</svg>";
+  }
+
+  function pctFromMediaStage(clientX, clientY) {
+    const stage = $("media-pdf-stage");
+    if (!stage) return null;
+    const r = stage.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    // Stage layout box == visual box at committed zoom (no CSS scale).
+    // During pinch preview CSS scale, getBoundingClientRect is transformed — % still matches overlay children.
+    return {
+      x: Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100))
+    };
+  }
+
+  function bindMediaInkGestures() {
+    const scroll = $("media-pdf-scroll");
+    if (!scroll || scroll._mediaInkBound) return;
+    scroll._mediaInkBound = true;
+    let gesture = null;
+
+    function showPreview(pts, color, width) {
+      const layer = ensureMediaInkLayer();
+      if (!layer) return;
+      const prev = layer.querySelector(".media-ink-preview");
+      if (!prev) return;
+      if (!pts || pts.length < 1) {
+        prev.setAttribute("hidden", "");
+        return;
+      }
+      prev.removeAttribute("hidden");
+      prev.setAttribute("d", pathToMediaSvgD(pts));
+      prev.setAttribute("stroke", color || "#38bdf8");
+      prev.setAttribute("stroke-width", String(width || 2.25));
+      prev.style.stroke = color || "#38bdf8";
+      prev.style.strokeWidth = String(width || 2.25);
+    }
+
+    function clearPreview() {
+      const layer = ensureMediaInkLayer();
+      if (!layer) return;
+      const prev = layer.querySelector(".media-ink-preview");
+      if (prev) {
+        prev.setAttribute("hidden", "");
+        prev.removeAttribute("d");
+      }
+    }
+
+    // Claim Apple Pencil early so Safari scroll/Scribble cannot cancel the stream
+    scroll.addEventListener("touchstart", function (e) {
+      if (!e.touches || !e.touches.length) return;
+      let stylus = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        const tt = e.touches[i].touchType;
+        if (tt === "stylus" || tt === "pen") { stylus = true; break; }
+      }
+      if (!stylus) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false, capture: true });
+
+    scroll.addEventListener("pointerdown", function (e) {
+      if (!$("media-pdf-canvas") || ($("media-pdf-scroll") && $("media-pdf-scroll").hidden)) return;
+      // Pen / mouse freehand; leave finger for pinch / pan / swipe
+      if (e.pointerType !== "pen" && e.pointerType !== "mouse") return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const pct = pctFromMediaStage(e.clientX, e.clientY);
+      if (!pct) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const prefs = mediaInkPrefs();
+      gesture = {
+        pointerId: e.pointerId,
+        points: [pct],
+        color: prefs.color,
+        width: prefs.width
+      };
+      state.inkDrawing = true;
+      try { scroll.setPointerCapture(e.pointerId); } catch (_) {}
+      showPreview(gesture.points, gesture.color, gesture.width);
+    }, true);
+
+    scroll.addEventListener("pointermove", function (e) {
+      if (!gesture || gesture.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const pct = pctFromMediaStage(e.clientX, e.clientY);
+      if (!pct) return;
+      const last = gesture.points[gesture.points.length - 1];
+      if (last && Math.hypot(pct.x - last.x, pct.y - last.y) < 0.08) return;
+      gesture.points.push(pct);
+      showPreview(gesture.points, gesture.color, gesture.width);
+    }, true);
+
+    function endInk(e) {
+      if (!gesture || (e && gesture.pointerId !== e.pointerId)) return;
+      const g = gesture;
+      gesture = null;
+      state.inkDrawing = false;
+      clearPreview();
+      try { if (e) scroll.releasePointerCapture(e.pointerId); } catch (_) {}
+      const pts = simplifyMediaPath(g.points);
+      if (!pts || pts.length < 2) return;
+      state.inkStrokes = state.inkStrokes || [];
+      state.inkStrokes.push({
+        path: pts,
+        color: g.color || "#38bdf8",
+        width: g.width || 2.25
+      });
+      if (state.inkStrokes.length > 200) {
+        state.inkStrokes = state.inkStrokes.slice(-200);
+      }
+      saveCurrentMediaInk();
+      renderMediaInkOverlay();
+      setStatusHint("已在 PDF 上畫墨跡 · 共 " + state.inkStrokes.length + " 筆");
+    }
+
+    scroll.addEventListener("pointerup", endInk, true);
+    scroll.addEventListener("pointercancel", endInk, true);
+  }
+
+  function reflowLayout() {
+    applyPdfZoom();
+  }
+
   async function renderPdfCanvas() {
     const canvas = $("media-pdf-canvas");
     const scroll = $("media-pdf-scroll");
@@ -496,6 +791,7 @@
       }
       if (token !== state.pdfRenderToken) return;
       if (empty) empty.hidden = true;
+      loadMediaInkForCurrent();
     } catch (err) {
       if (token !== state.pdfRenderToken) return;
       if (isPdfRenderCancelled(err)) return;
@@ -638,6 +934,10 @@
       if (openTab) { openTab.hidden = true; openTab.removeAttribute("href"); }
       if (dl) { dl.hidden = true; dl.removeAttribute("href"); dl.removeAttribute("download"); }
       if (title) title.innerHTML = '樹木 PDF <span class="tag">頁</span>';
+      if (state.inkKey) saveCurrentMediaInk();
+      state.inkKey = null;
+      state.inkStrokes = [];
+      renderMediaInkOverlay();
       return;
     }
 
@@ -1636,6 +1936,7 @@
 
     scroll.addEventListener("touchstart", function (e) {
       if (!e.touches || !e.touches.length) return;
+      if (state.inkDrawing) return;
       if (e.touches.length === 2) {
         e.preventDefault();
         pan = null;
@@ -1806,7 +2107,9 @@
     if (pzin) pzin.addEventListener("click", () => stepPdfZoom(1));
     if (pzout) pzout.addEventListener("click", () => stepPdfZoom(-1));
     if (pzreset) pzreset.addEventListener("click", () => resetPdfZoom());
+    loadMediaInkBag();
     bindPdfGestures($("media-pdf-scroll"));
+    bindMediaInkGestures();
 
     const mediaInput = $("media-file-input");
     if (mediaInput) {
@@ -1914,6 +2217,7 @@
     setFilterMode: setFilterMode,
     setShowPhotos: setShowPhotos,
     demoAttrs: DEMO_ATTRS,
+    reflowLayout: reflowLayout,
     getState: function () { return state; }
   };
 

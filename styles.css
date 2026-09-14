@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -820,6 +820,42 @@ body.media-layout.hide-media.has-tree-list {
 body.media-layout.hide-media .media-panel {
   display: none !important;
 }
+/* v102: hide map → media expands full top width; tree list stays bottom */
+body.media-layout.hide-map {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side media"
+    "side table";
+}
+body.media-layout.hide-map.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side media"
+    "side trees";
+}
+body.media-layout.hide-map #map,
+body.media-layout.hide-map .map-ref-panel,
+body.media-layout.hide-map .annot-float-bar {
+  display: none !important;
+}
+/* Both hidden: keep tree list (or attr table) visible */
+body.media-layout.hide-map.hide-media {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side table"
+    "side table";
+}
+body.media-layout.hide-map.hide-media.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side trees"
+    "side trees";
+}
+body.media-layout.hide-map.hide-media .media-panel {
+  display: none !important;
+}
 body.media-layout.table-collapsed:not(.has-tree-list) {
   grid-template-rows: 56px 1.35fr minmax(160px, 0.65fr);
 }
@@ -1245,12 +1281,62 @@ body.media-layout.table-collapsed .feature-attrs {
   display: none !important;
 }
 .media-pdf-stage {
+  position: relative;
   width: auto;
   height: auto;
   min-width: 100%;
   transform-origin: 0 0;
   will-change: transform;
   touch-action: none; /* v85: JS pinch must receive multi-touch */
+}
+/* v102: freehand ink overlay — % of stage layout box (layout-size zoom, no CSS-scale skew) */
+.media-pdf-ink-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+.media-pdf-ink-layer .media-ink-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.media-pdf-ink-layer .media-draw-ink,
+.media-pdf-ink-layer .media-ink-preview {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.media-pdf-ink-layer .media-ink-preview {
+  opacity: 0.75;
+}
+.tree-list-import-pdf-btn {
+  position: relative;
+  overflow: hidden;
+}
+.tree-list-import-pdf-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 40px;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .media-pdf-canvas {
   display: block;
@@ -1444,6 +1530,39 @@ body.media-layout.show-photos .media-pdf-main {
   body.media-layout.hide-media .media-panel {
     display: none !important;
   }
+  body.media-layout.hide-map {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "media"
+      "table";
+  }
+  body.media-layout.hide-map.has-tree-list {
+    grid-template-areas:
+      "top"
+      "media"
+      "trees";
+  }
+  body.media-layout.hide-map #map,
+  body.media-layout.hide-map .map-ref-panel,
+  body.media-layout.hide-map .annot-float-bar {
+    display: none !important;
+  }
+  body.media-layout.hide-map.hide-media {
+    grid-template-areas:
+      "top"
+      "table"
+      "table";
+  }
+  body.media-layout.hide-map.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "trees"
+      "trees";
+  }
+  body.media-layout.hide-map.hide-media .media-panel {
+    display: none !important;
+  }
   body.media-layout.table-collapsed:not(.has-tree-list) {
     grid-template-rows: auto 1.35fr minmax(140px, 0.65fr);
   }
@@ -1510,6 +1629,39 @@ body.media-layout.show-photos .media-pdf-main {
       "trees";
   }
   body.media-layout.hide-media .media-panel {
+    display: none !important;
+  }
+  body.media-layout.hide-map {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "media"
+      "table";
+  }
+  body.media-layout.hide-map.has-tree-list {
+    grid-template-areas:
+      "top"
+      "media"
+      "trees";
+  }
+  body.media-layout.hide-map #map,
+  body.media-layout.hide-map .map-ref-panel,
+  body.media-layout.hide-map .annot-float-bar {
+    display: none !important;
+  }
+  body.media-layout.hide-map.hide-media {
+    grid-template-areas:
+      "top"
+      "table"
+      "table";
+  }
+  body.media-layout.hide-map.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "trees"
+      "trees";
+  }
+  body.media-layout.hide-map.hide-media .media-panel {
     display: none !important;
   }
 }
@@ -2564,13 +2716,15 @@ body.has-map-ref .annot-float-bar {
 }
 
 
-/* Hide-media toggle: keep reachable on iPad topbar */
-#btn-toggle-media {
+/* Hide-media / hide-map toggles: keep reachable on iPad topbar */
+#btn-toggle-media,
+#btn-toggle-map {
   white-space: nowrap;
   min-height: 40px;
   touch-action: manipulation;
 }
-body.hide-media #btn-toggle-media {
+body.hide-media #btn-toggle-media,
+body.hide-map #btn-toggle-map {
   background: rgba(91, 140, 255, 0.22);
   border-color: rgba(91, 140, 255, 0.55);
 }
