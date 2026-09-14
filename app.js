@@ -3218,7 +3218,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=105").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=106").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

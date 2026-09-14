@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v105: list PDF fills tree-list panel. v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1901,13 +1901,10 @@ body.media-layout.has-tree-list.has-tree-list-pdf {
     flex-direction: column;
   }
   body.has-tree-list-pdf .tree-list-pdf-pane {
-    flex: 1 1 48%;
+    flex: 1 1 auto;
     max-width: none;
-    max-height: 52%;
-  }
-  body.has-tree-list-pdf .tree-list-body > .tree-list {
-    flex: 1 1 48%;
-    max-height: 52%;
+    max-height: none;
+    min-height: 0;
   }
 }
 
