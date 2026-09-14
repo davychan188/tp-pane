@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=107" />
-  <link rel="stylesheet" href="styles.css?v=107" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=108" />
+  <link rel="stylesheet" href="styles.css?v=108" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -39,7 +39,7 @@
       </label>
       <label class="btn" id="btn-import-map-pdf" title="Import map PDF or image · 匯入地圖 PDF／圖片">
         匯入地圖 PDF
-        <input id="map-ref-file-input" type="file" accept=".pdf,image/*,application/pdf" hidden />
+        <input id="map-ref-file-input" type="file" accept="*/*" hidden />
       </label>
       <label class="btn" id="btn-pick-media" title="選擇 PDF（可從檔案／相簿；唔使對應樹木／地圖）">
         媒體資料夾
@@ -48,6 +48,7 @@
       <button class="btn" id="btn-fit" type="button">Fit</button>
       <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示樹木 PDF（地圖可擴展）">隱藏媒體</button>
       <button class="btn" id="btn-toggle-map" type="button" aria-pressed="false" title="隱藏／顯示地圖（樹木 PDF 可擴展）">隱藏地圖</button>
+      <button class="btn" id="btn-toggle-trees" type="button" aria-pressed="false" title="隱藏／顯示樹木列表（地圖可擴展佔滿列表空間）">隱藏列表</button>
       <button class="btn" id="btn-save-as" type="button">另存</button>
       <button class="btn" id="btn-export-xlsx" type="button" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
       <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
@@ -122,7 +123,7 @@
       </label>
       <label class="btn full" style="position:relative;overflow:hidden;margin-top:6px" title="Import map PDF or image">
         匯入地圖 PDF／圖片
-        <input id="map-ref-file-input-side" type="file" accept=".pdf,image/*,application/pdf" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
+        <input id="map-ref-file-input-side" type="file" accept="*/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <div class="hint" style="margin-top:6px">可只匯入清單，或只匯入地圖 PDF；兩者互不阻擋，不必開 .gpkg。</div>
       </div>
@@ -232,6 +233,11 @@
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
         <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
       </div>
+      <div class="map-ref-page-nav" id="map-ref-page-nav" hidden>
+        <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-prev" title="上一頁" aria-label="上一頁">‹</button>
+        <select id="map-ref-page-select" class="map-ref-page-select" aria-label="地圖頁碼"></select>
+        <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-next" title="下一頁" aria-label="下一頁">›</button>
+      </div>
       <div class="map-sheet-tabs" id="map-sheet-tabs" hidden role="tablist" aria-label="地圖圖紙"></div>
     </div>
   </div>
@@ -265,7 +271,7 @@
       <div class="tree-list-export-actions">
         <label class="btn tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
           匯入 PDF
-          <input id="tree-list-pdf-input" type="file" accept=".pdf,application/pdf" multiple />
+          <input id="tree-list-pdf-input" type="file" accept="*/*" multiple />
         </label>
         <button class="btn" type="button" id="btn-annot-export-list" title="匯出 CSV">匯出 CSV</button>
         <button class="btn btn-primary" type="button" id="btn-annot-export-xlsx-list" title="匯出 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
@@ -277,7 +283,7 @@
         <div class="tree-list-pdf-toolbar">
           <span class="tree-list-pdf-title" id="tree-list-pdf-title">列表 PDF</span>
           <button class="btn tree-list-pdf-step" type="button" id="tree-list-pdf-prev" title="上一頁" aria-label="上一頁">‹</button>
-          <button class="btn tree-list-pdf-page" type="button" id="tree-list-pdf-page" title="跳頁">第 — / — 頁</button>
+          <select class="btn tree-list-pdf-page" id="tree-list-pdf-page" aria-label="列表 PDF 頁碼" title="跳頁"></select>
           <button class="btn tree-list-pdf-step" type="button" id="tree-list-pdf-next" title="下一頁" aria-label="下一頁">›</button>
           <span id="tree-list-pdf-ink-host" class="tree-list-pdf-ink-host" aria-label="墨跡設定（同地圖）"></span>
           <button class="btn" type="button" id="tree-list-pdf-clear-ink" title="清除本頁墨跡">清墨</button>
@@ -356,12 +362,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=107"></script>
-  <script src="vendor/geopackage.min.js?v=107"></script>
-  <script src="vendor/xlsx.full.min.js?v=107"></script>
-  <script src="vendor/pdf.min.js?v=107"></script>
-  <script src="media.js?v=107"></script>
-  <script src="import-extras.js?v=107"></script>
-  <script src="app.js?v=107"></script>
+  <script src="vendor/leaflet.js?v=108"></script>
+  <script src="vendor/geopackage.min.js?v=108"></script>
+  <script src="vendor/xlsx.full.min.js?v=108"></script>
+  <script src="vendor/pdf.min.js?v=108"></script>
+  <script src="media.js?v=108"></script>
+  <script src="import-extras.js?v=108"></script>
+  <script src="app.js?v=108"></script>
 </body>
 </html>

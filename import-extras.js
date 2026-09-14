@@ -1,5 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
+ * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
@@ -45,6 +46,7 @@
   const LS_SESSION = "tp-pane-session-trees";
   const LS_HIDE_MEDIA = "tp-pane-hide-media";
   const LS_HIDE_MAP = "tp-pane-hide-map";
+  const LS_HIDE_TREES = "tp-pane-hide-trees";
   const LS_INK_PREFS = "tp-pane-ink-prefs";
   const LS_COL_MAP = "tp-pane-excel-col-map";
   const LS_LIST_PDF_INK = "tp-pane-list-pdf-ink";
@@ -70,7 +72,7 @@
     mapRefMeta: null,   // { name, kind } when map blob cannot be restored
     mapRefZoom: { scale: 1, x: 0, y: 0 }, // x/y = scrollLeft/Top; scale enlarges layout (no CSS scale())
     mapRefRasterized: false,
-    mapSheets: [],      // [{ id, label, kind:'original'|'crop', url, sourceName, cropOf? }]
+    mapSheets: [],      // [{ id, label, kind:'original'|'page'|'crop', url, sourceName, page?, cropOf? }]
     activeMapSheetId: null,
     cropMode: false,
     cropRect: null,     // { x, y, w, h } in active sheet content % (0–100)
@@ -273,18 +275,61 @@
     };
   }
 
+  function getMapPageSheets() {
+    return (state.mapSheets || []).filter(function (s) {
+      return s && (s.kind === "page" || (typeof s.page === "number" && s.page > 0));
+    });
+  }
+
+  function syncMapPageSelect() {
+    const nav = $("map-ref-page-nav");
+    const sel = $("map-ref-page-select");
+    const pages = getMapPageSheets();
+    if (!nav || !sel) return;
+    if (pages.length < 1) {
+      nav.hidden = true;
+      sel.innerHTML = "";
+      return;
+    }
+    nav.hidden = false;
+    const total = pages.length;
+    const active = state.activeMapSheetId;
+    const opts = [];
+    for (let i = 0; i < pages.length; i++) {
+      const n = pages[i].page || (i + 1);
+      opts.push('<option value="' + escapeHtml(pages[i].id) + '"' +
+        (pages[i].id === active ? " selected" : "") + ">第 " + n + " / " + total + " 頁</option>");
+    }
+    sel.innerHTML = opts.join("");
+    if (pages.some(function (p) { return p.id === active; })) {
+      sel.value = active;
+    }
+  }
+
   function renderMapSheetTabs() {
     const box = $("map-sheet-tabs");
-    if (!box) return;
     const sheets = state.mapSheets || [];
+    const pages = getMapPageSheets();
+    const hasPages = pages.length >= 1;
+    syncMapPageSelect();
+    if (!box) return;
     if (!sheets.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    // Multipage: page sheets use select; tabs show crops (+ original if any without pages)
+    const tabSheets = hasPages
+      ? sheets.filter(function (s) { return s && s.kind !== "page"; })
+      : sheets;
+    if (!tabSheets.length) {
       box.hidden = true;
       box.innerHTML = "";
       return;
     }
     box.hidden = false;
     const active = state.activeMapSheetId;
-    box.innerHTML = sheets.map(function (s) {
+    box.innerHTML = tabSheets.map(function (s) {
       const on = s.id === active ? " on" : "";
       return '<button type="button" class="map-sheet-tab' + on + '" role="tab" data-sheet-id="' +
         escapeHtml(s.id) + '" aria-selected="' + (s.id === active ? "true" : "false") + '" title="' +
@@ -391,7 +436,8 @@
     }
     if (label) {
       const base = sheet.sourceName || state.mapRefName || "地圖";
-      label.textContent = "地圖參考 · " + base + (sheet.kind === "crop" ? " · " + sheet.label : "");
+      label.textContent = "地圖參考 · " + base +
+        (sheet.kind === "crop" || sheet.kind === "page" ? " · " + sheet.label : "");
     }
     if (openTab && sheet.url) {
       openTab.hidden = false;
@@ -576,6 +622,37 @@
         if (!t) return;
         e.preventDefault();
         switchMapSheet(t.getAttribute("data-sheet-id"));
+      });
+    }
+    const pageSel = $("map-ref-page-select");
+    if (pageSel && !pageSel._pageBound) {
+      pageSel._pageBound = true;
+      pageSel.addEventListener("change", function () {
+        if (pageSel.value) switchMapSheet(pageSel.value);
+      });
+    }
+    const pagePrev = $("map-ref-page-prev");
+    if (pagePrev && !pagePrev._pageBound) {
+      pagePrev._pageBound = true;
+      pagePrev.addEventListener("click", function () {
+        const pages = getMapPageSheets();
+        if (!pages.length) return;
+        let idx = pages.findIndex(function (p) { return p.id === state.activeMapSheetId; });
+        if (idx < 0) idx = 0;
+        const next = pages[Math.max(0, idx - 1)];
+        if (next) switchMapSheet(next.id);
+      });
+    }
+    const pageNext = $("map-ref-page-next");
+    if (pageNext && !pageNext._pageBound) {
+      pageNext._pageBound = true;
+      pageNext.addEventListener("click", function () {
+        const pages = getMapPageSheets();
+        if (!pages.length) return;
+        let idx = pages.findIndex(function (p) { return p.id === state.activeMapSheetId; });
+        if (idx < 0) idx = 0;
+        const next = pages[Math.min(pages.length - 1, idx + 1)];
+        if (next) switchMapSheet(next.id);
       });
     }
     const overlay = $("map-crop-overlay");
@@ -983,6 +1060,32 @@
     }
   }
 
+  function applyHideTrees(hide) {
+    hide = !!hide;
+    document.body.classList.toggle("hide-trees", hide);
+    const btn = $("btn-toggle-trees");
+    if (btn) {
+      btn.textContent = hide ? "顯示列表" : "隱藏列表";
+      btn.setAttribute("aria-pressed", hide ? "true" : "false");
+      btn.title = hide ? "顯示樹木列表（底部）" : "隱藏樹木列表（地圖可擴展佔滿列表空間）";
+    }
+    try { localStorage.setItem(LS_HIDE_TREES, hide ? "1" : "0"); } catch (_) {}
+    reflowAfterLayoutToggle();
+  }
+
+  function initHideTreesToggle() {
+    let hide = false;
+    try { hide = localStorage.getItem(LS_HIDE_TREES) === "1"; } catch (_) {}
+    applyHideTrees(hide);
+    const btn = $("btn-toggle-trees");
+    if (btn && !btn._hideBound) {
+      btn._hideBound = true;
+      btn.addEventListener("click", () => {
+        applyHideTrees(!document.body.classList.contains("hide-trees"));
+      });
+    }
+  }
+
   /** v104: list-panel PDF viewer state (independent of media panel). */
   const listPdf = {
     url: null,
@@ -1010,7 +1113,7 @@
       try {
         const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
         const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=107";
+        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=108";
         listPdf.pdfjsReady = true;
       } catch (e) {
         console.warn("list pdf.js worker config failed", e);
@@ -1203,13 +1306,19 @@
   }
 
   function updateListPdfPageLabel() {
-    const btn = $("tree-list-pdf-page");
+    const sel = $("tree-list-pdf-page");
     const total = listPdf.pageCount || 1;
     const cur = listPdf.page || 1;
-    if (btn) {
-      btn.textContent = "第 " + cur + " / " + total + " 頁";
-      btn.disabled = !listPdf.url;
-      btn.title = "點擊跳至頁碼（目前第 " + cur + " 頁）";
+    if (sel) {
+      const opts = [];
+      for (let i = 1; i <= total; i++) {
+        opts.push('<option value="' + i + '"' + (i === cur ? " selected" : "") +
+          ">第 " + i + " / " + total + " 頁</option>");
+      }
+      sel.innerHTML = opts.join("");
+      sel.value = String(cur);
+      sel.disabled = !listPdf.url;
+      sel.title = "選擇頁碼（目前第 " + cur + " 頁）";
     }
     const title = $("tree-list-pdf-title");
     if (title) title.textContent = listPdf.name ? ("列表 PDF · " + listPdf.name) : "列表 PDF";
@@ -1768,21 +1877,20 @@
 
     const prev = $("tree-list-pdf-prev");
     const next = $("tree-list-pdf-next");
-    const pageBtn = $("tree-list-pdf-page");
+    const pageSel = $("tree-list-pdf-page");
     const clearInk = $("tree-list-pdf-clear-ink");
     const closeBtn = $("tree-list-pdf-close");
     if (prev) prev.addEventListener("click", function () { stepListPdfPage(-1); });
     if (next) next.addEventListener("click", function () { stepListPdfPage(1); });
-    if (pageBtn) pageBtn.addEventListener("click", function () {
-      if (!listPdf.url) return;
-      const total = listPdf.pageCount || 1;
-      const cur = listPdf.page || 1;
-      const raw = window.prompt("跳至第幾頁？（1–" + total + "）", String(cur));
-      if (raw == null) return;
-      const n = parseInt(String(raw).trim(), 10);
-      if (!isFinite(n)) return;
-      jumpListPdfPage(n);
-    });
+    if (pageSel && !pageSel._listPdfPageBound) {
+      pageSel._listPdfPageBound = true;
+      pageSel.addEventListener("change", function () {
+        if (!listPdf.url) return;
+        const n = parseInt(String(pageSel.value || "1"), 10);
+        if (!isFinite(n)) return;
+        jumpListPdfPage(n);
+      });
+    }
     if (clearInk) clearInk.addEventListener("click", clearListPdfInkCurrent);
     if (closeBtn) closeBtn.addEventListener("click", closeListPdf);
 
@@ -2262,6 +2370,10 @@
     }
     const tabs = $("map-sheet-tabs");
     if (tabs) { tabs.hidden = true; tabs.innerHTML = ""; }
+    const pageNav = $("map-ref-page-nav");
+    if (pageNav) pageNav.hidden = true;
+    const pageSel = $("map-ref-page-select");
+    if (pageSel) pageSel.innerHTML = "";
   }
 
   function parseCsvText(text) {
@@ -3091,6 +3203,125 @@
   }
 
   /**
+   * v108: Rasterize ALL PDF pages (~1600px long edge) into mapSheets (kind:"page").
+   * Soft-cap 60 pages; warn when >40. Crops remain appendable after pages.
+   */
+  function rasterizeMapRefPdfAllPages(pdfUrl, name) {
+    const lib = ensurePdfjsForMapRef();
+    if (!lib) return Promise.resolve({ ok: false, pageCount: 0 });
+    const MAP_PDF_SOFT_CAP = 60;
+    const MAP_PDF_WARN_AT = 40;
+    return (async function () {
+      const task = lib.getDocument({ url: pdfUrl });
+      const doc = await task.promise;
+      try {
+        const totalPages = doc.numPages || 1;
+        const importCount = Math.min(totalPages, MAP_PDF_SOFT_CAP);
+        const baseKey = mapInkKey(name) || "map";
+        const pageSheets = [];
+        for (let n = 1; n <= importCount; n++) {
+          const page = await doc.getPage(n);
+          const base = page.getViewport({ scale: 1 });
+          const longEdge = Math.max(base.width, base.height) || 1;
+          const scale = Math.min(2.5, Math.max(1.25, 1600 / longEdge));
+          const viewport = page.getViewport({ scale: scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          const ctx = canvas.getContext("2d", { alpha: false });
+          if (!ctx) continue;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+          const blob = await new Promise(function (resolve) {
+            if (canvas.toBlob) canvas.toBlob(resolve, "image/png");
+            else resolve(null);
+          });
+          if (!blob) continue;
+          const rasterUrl = rememberUrl(URL.createObjectURL(blob));
+          pageSheets.push({
+            id: baseKey + ":p" + n,
+            label: "第" + n + "頁",
+            kind: "page",
+            page: n,
+            url: rasterUrl,
+            sourceName: name || ""
+          });
+        }
+        if (!pageSheets.length) return { ok: false, pageCount: totalPages };
+        // Keep crop sheets appendable: replace with pages only (fresh import)
+        clearMapSheets();
+        state.mapSheets = pageSheets.slice();
+        const first = pageSheets[0];
+        state.activeMapSheetId = first.id;
+        state.mapRefRasterUrl = first.url;
+        state.mapRefRasterized = true;
+        if (state.drawMapKey !== first.id) {
+          saveCurrentMapInk();
+          loadMapInk(first.id);
+        } else {
+          state.drawMapKey = first.id;
+        }
+        const img = $("map-ref-img");
+        const obj = $("map-ref-object");
+        const emb = $("map-ref-embed");
+        const frame = $("map-ref-frame");
+        if (obj) {
+          obj.hidden = true;
+          try { obj.removeAttribute("data"); } catch (e) { /* ignore */ }
+          obj.data = "";
+        }
+        if (emb) {
+          try { emb.removeAttribute("src"); } catch (e) { /* ignore */ }
+          emb.src = "";
+        }
+        if (frame) {
+          frame.hidden = true;
+          frame.removeAttribute("src");
+        }
+        if (img) {
+          await new Promise(function (resolve) {
+            var settled = false;
+            const done = function () {
+              if (settled) return;
+              settled = true;
+              img.removeEventListener("load", done);
+              img.removeEventListener("error", done);
+              resolve();
+            };
+            img.addEventListener("load", done);
+            img.addEventListener("error", done);
+            img.hidden = false;
+            img.src = first.url;
+            img.alt = (name || "map") + " · 第1頁";
+            if (img.complete && img.naturalWidth) done();
+          });
+        }
+        renderMapSheetTabs();
+        let note = "";
+        if (totalPages > MAP_PDF_SOFT_CAP) {
+          note = "（共 " + totalPages + " 頁，已載入前 " + importCount + " 頁）";
+        } else if (totalPages > MAP_PDF_WARN_AT) {
+          note = "（共 " + totalPages + " 頁，檔案較大）";
+        }
+        return {
+          ok: true,
+          pageCount: totalPages,
+          imported: importCount,
+          note: note,
+          firstUrl: first.url
+        };
+      } finally {
+        try { if (doc && doc.destroy) doc.destroy(); } catch (e) { /* ignore */ }
+      }
+    })().catch(function (err) {
+      console.warn("map-ref PDF multipage rasterize failed", err);
+      state.mapRefRasterized = false;
+      return { ok: false, pageCount: 0, error: err };
+    });
+  }
+
+  /**
    * Layout-size zoom (Option 1): enlarge #map-ref-zoom-stage width/height by scale,
    * pan with viewer scrollLeft/scrollTop. Never use transform:scale() — WebKit hit-tests
    * the untransformed box, which broke Apple Pencil above ~1.9×.
@@ -3315,10 +3546,20 @@
     const label = $("map-ref-label");
     const openTab = $("map-ref-open-tab");
 
-    function finishShow(statusMsg, displayUrl) {
-      const sheetUrl = displayUrl || state.mapRefRasterUrl || state.mapRefUrl || url;
-      registerOriginalSheet(sheetUrl, name);
-      if (label) label.textContent = "地圖參考 · " + name;
+    function finishShow(statusMsg, displayUrl, opts) {
+      opts = opts || {};
+      if (!opts.sheetsReady) {
+        const sheetUrl = displayUrl || state.mapRefRasterUrl || state.mapRefUrl || url;
+        registerOriginalSheet(sheetUrl, name);
+      }
+      if (label) {
+        const pages = getMapPageSheets();
+        if (pages.length > 1) {
+          label.textContent = "地圖參考 · " + name + " · 第1頁";
+        } else {
+          label.textContent = "地圖參考 · " + name;
+        }
+      }
       document.body.classList.add("force-map-ref");
       state.mapRefMeta = { name: name, kind: state.mapRefKind };
       updateMapRefVisibility();
@@ -3341,32 +3582,44 @@
         openTab.textContent = "新分頁";
         openTab.title = "新分頁開啟目前地圖 PDF（第 1 頁）";
       }
-      // Prefer rasterized page-1 image so annotate % matches map pixels (same as PNG/JPG)
-      setImportStatus("正在將 PDF 轉成影像以便加樹…", "");
-      rasterizeMapRefPdf(url).then(function (ok) {
-        if (ok) {
-          finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可直接畫墨跡／裁切）", state.mapRefRasterUrl);
+      // v108: rasterize ALL pages into mapSheets (kind page)
+      setImportStatus("正在將 PDF 各頁轉成影像以便加樹…", "");
+      rasterizeMapRefPdfAllPages(url, name).then(function (result) {
+        if (result && result.ok) {
+          const n = result.imported || result.pageCount || 1;
+          const note = result.note || "";
+          finishShow(
+            "已載入地圖參考：" + name + "（" + n + " 頁）" + note,
+            result.firstUrl || state.mapRefRasterUrl,
+            { sheetsReady: true }
+          );
           return;
         }
-        // Fallback: native PDF viewer (less accurate for annotate)
-        if (emb) {
-          emb.setAttribute("type", "application/pdf");
-          emb.src = url;
-        }
-        if (obj) {
-          obj.hidden = false;
-          obj.setAttribute("type", "application/pdf");
-          obj.data = url;
-        }
-        if (frame) {
-          frame.hidden = true;
-          frame.removeAttribute("src");
-        }
-        if (img) {
-          img.hidden = true;
-          img.removeAttribute("src");
-        }
-        finishShow("已載入地圖參考：" + name + "（PDF 檢視器 · 建議改用 PNG／JPG 畫記）");
+        // Fallback: try single-page rasterize, then native viewer
+        rasterizeMapRefPdf(url).then(function (ok) {
+          if (ok) {
+            finishShow("已載入地圖參考：" + name + "（PDF 第 1 頁影像 · 可直接畫墨跡／裁切）", state.mapRefRasterUrl);
+            return;
+          }
+          if (emb) {
+            emb.setAttribute("type", "application/pdf");
+            emb.src = url;
+          }
+          if (obj) {
+            obj.hidden = false;
+            obj.setAttribute("type", "application/pdf");
+            obj.data = url;
+          }
+          if (frame) {
+            frame.hidden = true;
+            frame.removeAttribute("src");
+          }
+          if (img) {
+            img.hidden = true;
+            img.removeAttribute("src");
+          }
+          finishShow("已載入地圖參考：" + name + "（PDF 檢視器 · 建議改用 PNG／JPG 畫記）");
+        });
       });
       return;
     }
@@ -5024,6 +5277,7 @@
     if (treeBox) bindTreeListInteractions(treeBox);
     initHideMediaToggle();
     initHideMapToggle();
+    initHideTreesToggle();
     initTreeListPdfImport();
 
     function bindExcelInput(el) {
@@ -5044,7 +5298,21 @@
       if (!el) return;
       el.addEventListener("change", () => {
         const f = el.files && el.files[0];
-        if (f) showMapRef(f);
+        if (!f) {
+          el.value = "";
+          return;
+        }
+        const fname = f.name || "";
+        const ftype = (f.type || "").toLowerCase();
+        const isPdf = /\.pdf$/i.test(fname) || ftype.indexOf("pdf") >= 0;
+        const isImage = /^image\//.test(ftype) ||
+          /\.(png|jpe?g|gif|webp|bmp|heic|heif|tif{1,2})$/i.test(fname);
+        if (!isPdf && !isImage) {
+          setImportStatus("請選擇 PDF 或圖片檔（目前：" + (fname || "未知類型") + "）", "warn");
+          el.value = "";
+          return;
+        }
+        showMapRef(f);
         el.value = "";
       });
     }
@@ -5174,6 +5442,7 @@
     restoreSession: restoreSession,
     applyHideMedia: applyHideMedia,
     applyHideMap: applyHideMap,
+    applyHideTrees: applyHideTrees,
     isAnnotateMode: function () { return !!state.annotateMode; },
     setAnnotateMode: setAnnotateMode,
     handleLeafletClick: handleLeafletClick,

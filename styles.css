@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -856,6 +856,58 @@ body.media-layout.hide-map.hide-media.has-tree-list {
 body.media-layout.hide-map.hide-media .media-panel {
   display: none !important;
 }
+/* v108: hide tree list / attr table → map+media expand into former bottom row */
+body.media-layout.hide-trees {
+  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-areas:
+    "top top top"
+    "side map media";
+}
+body.media-layout.hide-trees.has-tree-list {
+  grid-template-areas:
+    "top top top"
+    "side map media";
+}
+body.media-layout.hide-trees .tree-list-panel,
+body.media-layout.hide-trees .table-panel {
+  display: none !important;
+}
+body.media-layout.hide-trees.hide-media {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side map";
+}
+body.media-layout.hide-trees.hide-media.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side map";
+}
+body.media-layout.hide-trees.hide-map {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side media";
+}
+body.media-layout.hide-trees.hide-map.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side media";
+}
+body.media-layout.hide-trees.hide-map.hide-media {
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side map";
+}
+body.media-layout.hide-trees.hide-map.hide-media.has-tree-list {
+  grid-template-areas:
+    "top top"
+    "side map";
+}
 body.media-layout.table-collapsed:not(.has-tree-list) {
   grid-template-rows: 56px 1.35fr minmax(160px, 0.65fr);
 }
@@ -1563,6 +1615,58 @@ body.media-layout.show-photos .media-pdf-main {
   body.media-layout.hide-map.hide-media .media-panel {
     display: none !important;
   }
+  /* v108: hide-trees on tablet */
+  body.media-layout.hide-trees {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "map media";
+  }
+  body.media-layout.hide-trees.has-tree-list {
+    grid-template-areas:
+      "top top"
+      "map media";
+  }
+  body.media-layout.hide-trees .tree-list-panel,
+  body.media-layout.hide-trees .table-panel {
+    display: none !important;
+  }
+  body.media-layout.hide-trees.hide-media {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-map {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "media";
+  }
+  body.media-layout.hide-trees.hide-map.has-tree-list {
+    grid-template-areas:
+      "top"
+      "media";
+  }
+  body.media-layout.hide-trees.hide-map.hide-media {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-map.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map";
+  }
   body.media-layout.table-collapsed:not(.has-tree-list) {
     grid-template-rows: auto 1.35fr minmax(140px, 0.65fr);
   }
@@ -1663,6 +1767,58 @@ body.media-layout.show-photos .media-pdf-main {
   }
   body.media-layout.hide-map.hide-media .media-panel {
     display: none !important;
+  }
+  /* v108: hide-trees on narrow portrait */
+  body.media-layout.hide-trees {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "map media";
+  }
+  body.media-layout.hide-trees.has-tree-list {
+    grid-template-areas:
+      "top top"
+      "map media";
+  }
+  body.media-layout.hide-trees .tree-list-panel,
+  body.media-layout.hide-trees .table-panel {
+    display: none !important;
+  }
+  body.media-layout.hide-trees.hide-media {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-map {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "media";
+  }
+  body.media-layout.hide-trees.hide-map.has-tree-list {
+    grid-template-areas:
+      "top"
+      "media";
+  }
+  body.media-layout.hide-trees.hide-map.hide-media {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "map";
+  }
+  body.media-layout.hide-trees.hide-map.hide-media.has-tree-list {
+    grid-template-areas:
+      "top"
+      "map";
   }
 }
 
@@ -1843,6 +1999,29 @@ body.media-layout.has-tree-list.has-tree-list-pdf {
   font-size: 11px;
   padding-left: 8px;
   padding-right: 8px;
+  min-height: 28px;
+  max-width: 140px;
+  appearance: auto;
+  -webkit-appearance: menulist;
+}
+.map-ref-page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-right: 6px;
+}
+.map-ref-page-nav[hidden] { display: none !important; }
+.map-ref-page-select {
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 24px;
+  max-width: 132px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
 }
 .tree-list-pdf-zoom-readout {
   margin-left: auto;
@@ -2896,13 +3075,15 @@ body.has-map-ref .annot-float-bar {
 
 /* Hide-media / hide-map toggles: keep reachable on iPad topbar */
 #btn-toggle-media,
-#btn-toggle-map {
+#btn-toggle-map,
+#btn-toggle-trees {
   white-space: nowrap;
   min-height: 40px;
   touch-action: manipulation;
 }
 body.hide-media #btn-toggle-media,
-body.hide-map #btn-toggle-map {
+body.hide-map #btn-toggle-map,
+body.hide-trees #btn-toggle-trees {
   background: rgba(91, 140, 255, 0.22);
   border-color: rgba(91, 140, 255, 0.55);
 }
