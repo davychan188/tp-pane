@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v104: tree-list in-panel PDF+ink (not media). v102: hide-map + tree-list PDF import. v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
+ * v105: list PDF fills entire tree-list panel. v104: list PDF pane (not media). v103: media pinch. v102: hide-map. v101: Pencil short-tap 加樹.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -1010,7 +1010,7 @@
       try {
         const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
         const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=104";
+        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=105";
         listPdf.pdfjsReady = true;
       } catch (e) {
         console.warn("list pdf.js worker config failed", e);

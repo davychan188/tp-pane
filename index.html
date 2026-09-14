@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=104" />
-  <link rel="stylesheet" href="styles.css?v=104" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=105" />
+  <link rel="stylesheet" href="styles.css?v=105" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -263,7 +263,7 @@
       <div class="card-title">樹木列表 Tree list <span class="tag" id="tree-list-count"></span></div>
       <div class="hint tree-list-hint">試算表檢視 · 點儲存格編輯 · 自動儲存</div>
       <div class="tree-list-export-actions">
-        <label class="btn tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF 至列表內顯示（可 Pencil 手寫；不會送到右側媒體）">
+        <label class="btn tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
           匯入 PDF
           <input id="tree-list-pdf-input" type="file" accept=".pdf,application/pdf" multiple />
         </label>
@@ -280,7 +280,7 @@
           <button class="btn tree-list-pdf-page" type="button" id="tree-list-pdf-page" title="跳頁">第 — / — 頁</button>
           <button class="btn tree-list-pdf-step" type="button" id="tree-list-pdf-next" title="下一頁" aria-label="下一頁">›</button>
           <button class="btn" type="button" id="tree-list-pdf-clear-ink" title="清除本頁墨跡">清墨</button>
-          <button class="btn" type="button" id="tree-list-pdf-close" title="關閉列表 PDF">關閉 PDF</button>
+          <button class="btn" type="button" id="tree-list-pdf-close" title="關閉 PDF，返樹木列表">關閉 PDF</button>
           <span class="zoom-readout tree-list-pdf-zoom-readout" id="tree-list-pdf-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
         </div>
         <div class="tree-list-pdf-scroll" id="tree-list-pdf-scroll">
@@ -355,12 +355,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=104"></script>
-  <script src="vendor/geopackage.min.js?v=104"></script>
-  <script src="vendor/xlsx.full.min.js?v=104"></script>
-  <script src="vendor/pdf.min.js?v=104"></script>
-  <script src="media.js?v=104"></script>
-  <script src="import-extras.js?v=104"></script>
-  <script src="app.js?v=104"></script>
+  <script src="vendor/leaflet.js?v=105"></script>
+  <script src="vendor/geopackage.min.js?v=105"></script>
+  <script src="vendor/xlsx.full.min.js?v=105"></script>
+  <script src="vendor/pdf.min.js?v=105"></script>
+  <script src="media.js?v=105"></script>
+  <script src="import-extras.js?v=105"></script>
+  <script src="app.js?v=105"></script>
 </body>
 </html>

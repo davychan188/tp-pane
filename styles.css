@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v105: list PDF fills tree-list panel. v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1745,7 +1745,7 @@ body.has-tree-list .tree-list-panel,
   min-width: 0;
 }
 
-/* v104: list | PDF split inside tree-list-panel */
+/* v105: list PDF fills entire tree-list area (list hidden while open). v104 had side split. */
 .tree-list-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -1766,8 +1766,9 @@ body.has-tree-list .tree-list-panel,
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  flex: 1 1 52%;
-  max-width: 58%;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-2);
@@ -1779,14 +1780,24 @@ body.has-tree-list .tree-list-panel,
 body.has-tree-list-pdf .tree-list-pdf-pane {
   display: flex;
 }
+/* While list PDF open: PDF occupies the whole tree-list panel body */
 body.has-tree-list-pdf .tree-list-body > .tree-list {
-  flex: 1 1 48%;
-  max-width: none;
+  display: none !important;
 }
 body:not(.has-tree-list-pdf) .tree-list-body > .tree-list {
+  display: block;
   flex: 1 1 auto;
   width: 100%;
   max-width: none;
+}
+/* Give more vertical room for handwriting / pinch when list PDF is open */
+body.media-layout.has-tree-list.has-tree-list-pdf {
+  grid-template-rows: 56px minmax(0, 0.85fr) minmax(240px, 42vh);
+}
+@media (max-width: 1180px) {
+  body.media-layout.has-tree-list.has-tree-list-pdf {
+    grid-template-rows: auto minmax(0, 0.85fr) minmax(220px, 44vh);
+  }
 }
 .tree-list-pdf-toolbar {
   display: flex;
