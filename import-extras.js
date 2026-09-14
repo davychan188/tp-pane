@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v102: hide-map + tree-list PDF import. v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
+ * v104: tree-list in-panel PDF+ink (not media). v102: hide-map + tree-list PDF import. v101: 加樹+Pencil short-tap place (larger slop; tiny strokes place not ink). v100: media PDF swipe in media.js. v99: syncTreeListHighlight scrolls + fuzzy tree ID. v98: sidebar above map-ref. v97: hide annot labels during pinch. v96: GPKG label UX. v95: GPKG lag. v94: grid. v90: annotate-only auto T#. v89: always-on labels. v88: 加樹 short-tap. v87: hints. v86: crop multi-sheet.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -47,6 +47,11 @@
   const LS_HIDE_MAP = "tp-pane-hide-map";
   const LS_INK_PREFS = "tp-pane-ink-prefs";
   const LS_COL_MAP = "tp-pane-excel-col-map";
+  const LS_LIST_PDF_INK = "tp-pane-list-pdf-ink";
+  const LIST_PDF_INK_MAX_STROKES = 240;
+  const LIST_PDF_INK_MAX_KEYS = 24;
+  const LIST_PDF_ZOOM_MIN = 1;
+  const LIST_PDF_ZOOM_MAX = 12;
   let persistTimer = null;
   let restoring = false;
 
@@ -978,24 +983,797 @@
     }
   }
 
-  /** Tree list 「匯入 PDF」 → same media ingest stack; auto-show media panel if hidden. */
+  /** v104: list-panel PDF viewer state (independent of media panel). */
+  const listPdf = {
+    url: null,
+    name: "",
+    file: null,
+    doc: null,
+    page: 1,
+    pageCount: 1,
+    zoom: 1,
+    renderToken: 0,
+    renderTask: null,
+    renderTimer: null,
+    pdfjsReady: false,
+    inkByKey: {},
+    inkStrokes: [],
+    inkKey: null,
+    inkDrawing: false,
+    objectUrls: []
+  };
+
+  function ensureListPdfjs() {
+    const lib = (typeof window !== "undefined" && window.pdfjsLib) ? window.pdfjsLib : null;
+    if (!lib) return null;
+    if (!listPdf.pdfjsReady) {
+      try {
+        const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
+        const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
+        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=104";
+        listPdf.pdfjsReady = true;
+      } catch (e) {
+        console.warn("list pdf.js worker config failed", e);
+      }
+    }
+    return lib;
+  }
+
+  function listPdfInkKey(page) {
+    const name = (listPdf.name || "").trim().toLowerCase() || "list-pdf";
+    const pg = page || listPdf.page || 1;
+    return name + "::" + pg;
+  }
+
+  function listInkPrefs() {
+    let color = state.inkColor || "#38bdf8";
+    let width = (isFinite(Number(state.inkWidth)) && Number(state.inkWidth) > 0) ? Number(state.inkWidth) : 2.25;
+    const colorEl = $("map-ink-color");
+    const widthEl = $("map-ink-width");
+    if (colorEl && colorEl.value) color = String(colorEl.value);
+    if (widthEl && widthEl.value != null && widthEl.value !== "") {
+      const w = Number(widthEl.value);
+      if (isFinite(w) && w > 0) width = w;
+    }
+    return { color: color, width: width };
+  }
+
+  function normalizeListStroke(s) {
+    if (!s || !Array.isArray(s.path) || !s.path.length) return null;
+    const pts = s.path.map(function (p) {
+      return { x: Number(p.x), y: Number(p.y) };
+    }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); });
+    if (pts.length < 2) return null;
+    const out = { path: pts };
+    if (s.color) out.color = String(s.color);
+    const w = Number(s.width);
+    if (isFinite(w) && w > 0) out.width = w;
+    return out;
+  }
+
+  function simplifyListPath(pts) {
+    if (!pts || pts.length < 3) return pts ? pts.slice() : null;
+    const out = [pts[0]];
+    const EPS = 0.12;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = out[out.length - 1];
+      const b = pts[i];
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= EPS) out.push(b);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+
+  function pathToListSvgD(pts) {
+    if (!pts || !pts.length) return "";
+    let d = "M " + Number(pts[0].x).toFixed(3) + " " + Number(pts[0].y).toFixed(3);
+    for (let i = 1; i < pts.length; i++) {
+      d += " L " + Number(pts[i].x).toFixed(3) + " " + Number(pts[i].y).toFixed(3);
+    }
+    return d;
+  }
+
+  function saveListPdfInkBag() {
+    try {
+      const bag = listPdf.inkByKey || {};
+      let keep = Object.keys(bag);
+      if (keep.length > LIST_PDF_INK_MAX_KEYS) keep = keep.slice(-LIST_PDF_INK_MAX_KEYS);
+      const out = {};
+      let total = 0;
+      keep.forEach(function (k) {
+        const list = (bag[k] || []).map(normalizeListStroke).filter(Boolean);
+        if (!list.length) return;
+        const capped = list.slice(-Math.max(16, Math.floor(LIST_PDF_INK_MAX_STROKES / Math.max(1, keep.length))));
+        out[k] = capped;
+        total += capped.length;
+      });
+      if (total > LIST_PDF_INK_MAX_STROKES) {
+        const kk = Object.keys(out);
+        while (total > LIST_PDF_INK_MAX_STROKES && kk.length) {
+          const k0 = kk.shift();
+          const drop = Math.min(out[k0].length, total - LIST_PDF_INK_MAX_STROKES);
+          out[k0] = out[k0].slice(drop);
+          total -= drop;
+          if (!out[k0].length) delete out[k0];
+        }
+      }
+      localStorage.setItem(LS_LIST_PDF_INK, JSON.stringify(out));
+    } catch (_) {}
+  }
+
+  function loadListPdfInkBag() {
+    try {
+      const raw = localStorage.getItem(LS_LIST_PDF_INK);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") return;
+      const bag = {};
+      Object.keys(data).forEach(function (k) {
+        if (!Array.isArray(data[k])) return;
+        const strokes = data[k].map(normalizeListStroke).filter(Boolean);
+        if (strokes.length) bag[k] = strokes;
+      });
+      listPdf.inkByKey = bag;
+    } catch (_) {}
+  }
+
+  function saveCurrentListPdfInk() {
+    const key = listPdf.inkKey;
+    if (!key) return;
+    listPdf.inkByKey = listPdf.inkByKey || {};
+    listPdf.inkByKey[key] = (listPdf.inkStrokes || []).map(normalizeListStroke).filter(Boolean);
+    saveListPdfInkBag();
+  }
+
+  function loadListPdfInkForCurrent() {
+    const key = listPdfInkKey(listPdf.page || 1);
+    if (listPdf.inkKey && listPdf.inkKey !== key) saveCurrentListPdfInk();
+    listPdf.inkKey = key;
+    const bag = listPdf.inkByKey || {};
+    listPdf.inkStrokes = (Array.isArray(bag[key]) ? bag[key] : []).map(normalizeListStroke).filter(Boolean);
+    renderListPdfInkOverlay();
+  }
+
+  function ensureListPdfInkLayer() {
+    const stage = $("tree-list-pdf-stage");
+    if (!stage) return null;
+    let layer = $("tree-list-pdf-ink-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "tree-list-pdf-ink-layer";
+      layer.className = "tree-list-pdf-ink-layer";
+      layer.setAttribute("aria-hidden", "true");
+      stage.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function renderListPdfInkOverlay() {
+    const layer = ensureListPdfInkLayer();
+    if (!layer) return;
+    let paths = "";
+    (listPdf.inkStrokes || []).forEach(function (s) {
+      if (!s || !s.path || s.path.length < 2) return;
+      const col = (s.color && String(s.color)) || "#38bdf8";
+      const w = (isFinite(Number(s.width)) && Number(s.width) > 0) ? Number(s.width) : 2.25;
+      paths += '<path class="list-draw-ink" d="' + pathToListSvgD(s.path) +
+        '" fill="none" stroke="' + col.replace(/"/g, "") + '" stroke-width="' + w +
+        '" style="stroke:' + col.replace(/"/g, "") + ';stroke-width:' + w +
+        '" vector-effect="non-scaling-stroke"></path>';
+    });
+    layer.innerHTML =
+      '<svg class="list-pdf-ink-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' +
+      paths +
+      '<path class="list-ink-preview" hidden fill="none" vector-effect="non-scaling-stroke"></path>' +
+      "</svg>";
+  }
+
+  function pctFromListPdfStage(clientX, clientY) {
+    const stage = $("tree-list-pdf-stage");
+    if (!stage) return null;
+    const r = stage.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return {
+      x: Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100))
+    };
+  }
+
+  function updateListPdfZoomLabel() {
+    const readout = $("tree-list-pdf-zoom-level");
+    const s = listPdf.zoom || 1;
+    if (readout) {
+      readout.textContent = (Math.round(s * 10) / 10) + "×";
+      readout.hidden = s <= 1.01;
+    }
+    const scroll = $("tree-list-pdf-scroll");
+    if (scroll) scroll.classList.toggle("is-zoomed", s > 1.01);
+  }
+
+  function updateListPdfPageLabel() {
+    const btn = $("tree-list-pdf-page");
+    const total = listPdf.pageCount || 1;
+    const cur = listPdf.page || 1;
+    if (btn) {
+      btn.textContent = "第 " + cur + " / " + total + " 頁";
+      btn.disabled = !listPdf.url;
+      btn.title = "點擊跳至頁碼（目前第 " + cur + " 頁）";
+    }
+    const title = $("tree-list-pdf-title");
+    if (title) title.textContent = listPdf.name ? ("列表 PDF · " + listPdf.name) : "列表 PDF";
+  }
+
+  function setListPdfPaneVisible(on) {
+    const pane = $("tree-list-pdf-pane");
+    const panel = $("tree-list-panel");
+    document.body.classList.toggle("has-tree-list-pdf", !!on);
+    if (pane) pane.hidden = !on;
+    if (on) {
+      // Ensure bottom list panel is visible so PDF can be seen (even with empty table)
+      document.body.classList.add("has-tree-list");
+      if (panel) panel.hidden = false;
+    } else if (!state.trees.length) {
+      document.body.classList.remove("has-tree-list");
+      if (panel) panel.hidden = true;
+    }
+    reflowAfterLayoutToggle();
+  }
+
+  function isListPdfRenderCancelled(err) {
+    if (!err) return false;
+    const name = err.name || "";
+    const msg = String(err.message || err || "");
+    return name === "RenderingCancelledException" ||
+      /RenderingCancelled/i.test(msg) ||
+      /cancel(led)?/i.test(msg);
+  }
+
+  async function cancelListPdfRender() {
+    const prev = listPdf.renderTask;
+    listPdf.renderTask = null;
+    if (!prev) return;
+    try { prev.cancel(); } catch (e) { /* ignore */ }
+    try { await prev.promise; } catch (e) { /* ignore cancel */ }
+  }
+
+  async function getListPdfDocument() {
+    if (listPdf.doc) return listPdf.doc;
+    const lib = ensureListPdfjs();
+    if (!lib) return null;
+    let data = null;
+    if (listPdf.file && typeof listPdf.file.arrayBuffer === "function") {
+      data = new Uint8Array(await listPdf.file.arrayBuffer());
+    } else if (listPdf.url) {
+      const res = await fetch(listPdf.url);
+      if (!res.ok) throw new Error("無法讀取 PDF");
+      data = new Uint8Array(await res.arrayBuffer());
+    } else {
+      throw new Error("沒有 PDF 資料");
+    }
+    const task = lib.getDocument({ data: data });
+    const doc = await task.promise;
+    listPdf.doc = doc;
+    if (doc && doc.numPages) listPdf.pageCount = doc.numPages;
+    return doc;
+  }
+
+  async function renderListPdfCanvas() {
+    const canvas = $("tree-list-pdf-canvas");
+    const scroll = $("tree-list-pdf-scroll");
+    const stage = $("tree-list-pdf-stage");
+    if (!canvas || !listPdf.url) return;
+    const token = ++listPdf.renderToken;
+    const pageNum = listPdf.page || 1;
+    const lib = ensureListPdfjs();
+    if (!lib) {
+      setImportStatus("缺少 pdf.js — 無法顯示列表 PDF", "warn");
+      return;
+    }
+    await cancelListPdfRender();
+    if (token !== listPdf.renderToken) return;
+    try {
+      const doc = await getListPdfDocument();
+      if (token !== listPdf.renderToken) return;
+      if (!doc) throw new Error("無法載入 PDF");
+      if (doc.numPages) listPdf.pageCount = doc.numPages;
+      const page = await doc.getPage(pageNum);
+      if (token !== listPdf.renderToken) return;
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+      const baseW = (scroll && scroll.clientWidth) ? Math.max(120, scroll.clientWidth - 4) : 280;
+      const rotate = (typeof page.rotate === "number") ? page.rotate : 0;
+      const unscaled = page.getViewport({ scale: 1, rotation: rotate });
+      const fitScale = baseW / unscaled.width;
+      const displayScale = fitScale * (listPdf.zoom || 1);
+      const viewport = page.getViewport({ scale: displayScale * dpr, rotation: rotate });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const cssW = Math.max(1, Math.floor(viewport.width / dpr));
+      const cssH = Math.max(1, Math.floor(viewport.height / dpr));
+      canvas.style.width = cssW + "px";
+      canvas.style.height = cssH + "px";
+      if (stage) {
+        stage.style.transform = "none";
+        stage.style.transformOrigin = "0 0";
+        stage.style.width = cssW + "px";
+        stage.style.height = cssH + "px";
+      }
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (!ctx) throw new Error("canvas 2d unavailable");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (token !== listPdf.renderToken) return;
+      const task = page.render({ canvasContext: ctx, viewport: viewport });
+      listPdf.renderTask = task;
+      try {
+        await task.promise;
+      } finally {
+        if (listPdf.renderTask === task) listPdf.renderTask = null;
+      }
+      if (token !== listPdf.renderToken) return;
+      updateListPdfPageLabel();
+      updateListPdfZoomLabel();
+      loadListPdfInkForCurrent();
+    } catch (err) {
+      if (token !== listPdf.renderToken) return;
+      if (isListPdfRenderCancelled(err)) return;
+      console.warn("list pdf canvas render failed", err);
+      setImportStatus("列表 PDF 繪製失敗：" + (err && err.message ? err.message : String(err)), "error");
+    }
+  }
+
+  function applyListPdfZoom() {
+    updateListPdfZoomLabel();
+    if (listPdf.renderTimer) {
+      clearTimeout(listPdf.renderTimer);
+      listPdf.renderTimer = null;
+    }
+    listPdf.renderTimer = setTimeout(function () {
+      listPdf.renderTimer = null;
+      renderListPdfCanvas();
+    }, 60);
+  }
+
+  function jumpListPdfPage(n) {
+    const total = listPdf.pageCount || 1;
+    const next = Math.max(1, Math.min(total, Number(n) || 1));
+    if (next === listPdf.page) return;
+    saveCurrentListPdfInk();
+    listPdf.page = next;
+    listPdf.zoom = 1;
+    updateListPdfPageLabel();
+    applyListPdfZoom();
+  }
+
+  function stepListPdfPage(dir) {
+    jumpListPdfPage((listPdf.page || 1) + (dir || 0));
+  }
+
+  function clearListPdfInkCurrent() {
+    listPdf.inkStrokes = [];
+    if (listPdf.inkKey) {
+      listPdf.inkByKey = listPdf.inkByKey || {};
+      delete listPdf.inkByKey[listPdf.inkKey];
+      saveListPdfInkBag();
+    }
+    renderListPdfInkOverlay();
+    setImportStatus("已清除本頁列表 PDF 墨跡", "ok");
+  }
+
+  function closeListPdf() {
+    saveCurrentListPdfInk();
+    cancelListPdfRender();
+    if (listPdf.doc) {
+      try { listPdf.doc.destroy(); } catch (_) {}
+      listPdf.doc = null;
+    }
+    (listPdf.objectUrls || []).forEach(function (u) {
+      try { URL.revokeObjectURL(u); } catch (_) {}
+    });
+    listPdf.objectUrls = [];
+    listPdf.url = null;
+    listPdf.name = "";
+    listPdf.file = null;
+    listPdf.page = 1;
+    listPdf.pageCount = 1;
+    listPdf.zoom = 1;
+    listPdf.inkKey = null;
+    listPdf.inkStrokes = [];
+    listPdf.inkDrawing = false;
+    const canvas = $("tree-list-pdf-canvas");
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, canvas.width || 0, canvas.height || 0);
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    renderListPdfInkOverlay();
+    setListPdfPaneVisible(false);
+    updateListPdfPageLabel();
+    setImportStatus("已關閉列表 PDF", "ok");
+  }
+
+  function openListPdfFile(file) {
+    if (!file) return;
+    const name = file.name || "document.pdf";
+    if (!/\.pdf$/i.test(name) && file.type !== "application/pdf") {
+      setImportStatus("請選擇 PDF 檔", "warn");
+      return;
+    }
+    saveCurrentListPdfInk();
+    cancelListPdfRender();
+    if (listPdf.doc) {
+      try { listPdf.doc.destroy(); } catch (_) {}
+      listPdf.doc = null;
+    }
+    (listPdf.objectUrls || []).forEach(function (u) {
+      try { URL.revokeObjectURL(u); } catch (_) {}
+    });
+    const url = URL.createObjectURL(file);
+    listPdf.objectUrls = [url];
+    listPdf.url = url;
+    listPdf.name = name;
+    listPdf.file = file;
+    listPdf.page = 1;
+    listPdf.pageCount = 1;
+    listPdf.zoom = 1;
+    listPdf.inkKey = null;
+    listPdf.inkStrokes = [];
+    setListPdfPaneVisible(true);
+    updateListPdfPageLabel();
+    // Double rAF so split layout has width before measuring
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        renderListPdfCanvas();
+      });
+    });
+    setImportStatus("已在列表內開啟 PDF（Pencil 可手寫；不會送到媒體面板）", "ok");
+  }
+
+  function bindListPdfInkGestures() {
+    const scroll = $("tree-list-pdf-scroll");
+    if (!scroll || scroll._listPdfInkBound) return;
+    scroll._listPdfInkBound = true;
+    let gesture = null;
+
+    function showPreview(pts, color, width) {
+      const layer = ensureListPdfInkLayer();
+      if (!layer) return;
+      const prev = layer.querySelector(".list-ink-preview");
+      if (!prev) return;
+      if (!pts || pts.length < 1) {
+        prev.setAttribute("hidden", "");
+        return;
+      }
+      prev.removeAttribute("hidden");
+      prev.setAttribute("d", pathToListSvgD(pts));
+      prev.setAttribute("stroke", color || "#38bdf8");
+      prev.setAttribute("stroke-width", String(width || 2.25));
+      prev.style.stroke = color || "#38bdf8";
+      prev.style.strokeWidth = String(width || 2.25);
+    }
+
+    function clearPreview() {
+      const layer = ensureListPdfInkLayer();
+      if (!layer) return;
+      const prev = layer.querySelector(".list-ink-preview");
+      if (prev) {
+        prev.setAttribute("hidden", "");
+        prev.removeAttribute("d");
+      }
+    }
+
+    scroll.addEventListener("touchstart", function (e) {
+      if (!e.touches || !e.touches.length) return;
+      let stylus = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        const tt = e.touches[i].touchType;
+        if (tt === "stylus" || tt === "pen") { stylus = true; break; }
+      }
+      if (!stylus) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false, capture: true });
+
+    scroll.addEventListener("pointerdown", function (e) {
+      if (!$("tree-list-pdf-canvas") || ($("tree-list-pdf-pane") && $("tree-list-pdf-pane").hidden)) return;
+      if (e.pointerType !== "pen" && e.pointerType !== "mouse") return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const pct = pctFromListPdfStage(e.clientX, e.clientY);
+      if (!pct) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const prefs = listInkPrefs();
+      gesture = {
+        pointerId: e.pointerId,
+        points: [pct],
+        color: prefs.color,
+        width: prefs.width
+      };
+      listPdf.inkDrawing = true;
+      try { scroll.setPointerCapture(e.pointerId); } catch (_) {}
+      showPreview(gesture.points, gesture.color, gesture.width);
+    }, true);
+
+    scroll.addEventListener("pointermove", function (e) {
+      if (!gesture || gesture.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const pct = pctFromListPdfStage(e.clientX, e.clientY);
+      if (!pct) return;
+      const last = gesture.points[gesture.points.length - 1];
+      if (last && Math.hypot(pct.x - last.x, pct.y - last.y) < 0.08) return;
+      gesture.points.push(pct);
+      showPreview(gesture.points, gesture.color, gesture.width);
+    }, true);
+
+    function endInk(e) {
+      if (!gesture || (e && gesture.pointerId !== e.pointerId)) return;
+      const g = gesture;
+      gesture = null;
+      listPdf.inkDrawing = false;
+      clearPreview();
+      try { if (e) scroll.releasePointerCapture(e.pointerId); } catch (_) {}
+      const pts = simplifyListPath(g.points);
+      if (!pts || pts.length < 2) return;
+      listPdf.inkStrokes = listPdf.inkStrokes || [];
+      listPdf.inkStrokes.push({
+        path: pts,
+        color: g.color || "#38bdf8",
+        width: g.width || 2.25
+      });
+      if (listPdf.inkStrokes.length > 200) {
+        listPdf.inkStrokes = listPdf.inkStrokes.slice(-200);
+      }
+      saveCurrentListPdfInk();
+      renderListPdfInkOverlay();
+      setImportStatus("已在列表 PDF 上畫墨跡 · 共 " + listPdf.inkStrokes.length + " 筆", "ok");
+    }
+
+    scroll.addEventListener("pointerup", endInk, true);
+    scroll.addEventListener("pointercancel", endInk, true);
+  }
+
+  function bindListPdfGestures() {
+    const scroll = $("tree-list-pdf-scroll");
+    if (!scroll || scroll._listPdfGesturesBound) return;
+    scroll._listPdfGesturesBound = true;
+    let pinch = null;
+    let pan = null;
+    let swipe = null;
+    let liveZoom = null;
+    const SWIPE_MIN_DX = 56;
+    const SWIPE_MAX_DY = 72;
+
+    function clampZ(z) {
+      return Math.max(LIST_PDF_ZOOM_MIN, Math.min(LIST_PDF_ZOOM_MAX, z));
+    }
+    function touchDist(a, b) {
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.sqrt(dx * dx + dy * dy) || 1;
+    }
+    function midPoint(a, b) {
+      return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    }
+    function stageEl() { return $("tree-list-pdf-stage"); }
+    function clearPreview() {
+      liveZoom = null;
+      const stage = stageEl();
+      if (stage) {
+        stage.style.transform = "none";
+        stage.style.transformOrigin = "0 0";
+      }
+    }
+    function applyLivePreview(absZoom, originClientX, originClientY) {
+      const base = listPdf.zoom || 1;
+      const next = clampZ(absZoom);
+      liveZoom = next;
+      const factor = next / base;
+      const stage = stageEl();
+      if (!stage) return;
+      const rect = scroll.getBoundingClientRect();
+      const ox = (originClientX != null ? originClientX : rect.left + rect.width / 2) - rect.left + scroll.scrollLeft;
+      const oy = (originClientY != null ? originClientY : rect.top + rect.height / 2) - rect.top + scroll.scrollTop;
+      stage.style.transformOrigin = ox.toFixed(2) + "px " + oy.toFixed(2) + "px";
+      stage.style.transform = "scale(" + factor.toFixed(5) + ")";
+      const readout = $("tree-list-pdf-zoom-level");
+      if (readout) {
+        readout.textContent = (Math.round(next * 10) / 10) + "×";
+        readout.hidden = next <= 1.01;
+      }
+      scroll.classList.toggle("is-zoomed", next > 1.01);
+    }
+    function commitAbsZoom(absZoom, focusClientX, focusClientY) {
+      const prev = listPdf.zoom || 1;
+      const next = clampZ(absZoom);
+      applyLivePreview(next, focusClientX, focusClientY);
+      if (Math.abs(next - prev) < 0.0005) {
+        clearPreview();
+        updateListPdfZoomLabel();
+        return;
+      }
+      const rect = scroll.getBoundingClientRect();
+      const fx = (focusClientX != null ? focusClientX : rect.left + rect.width / 2);
+      const fy = (focusClientY != null ? focusClientY : rect.top + rect.height / 2);
+      const relX = fx - rect.left + scroll.scrollLeft;
+      const relY = fy - rect.top + scroll.scrollTop;
+      const ratio = next / prev;
+      if (listPdf.renderTimer) {
+        clearTimeout(listPdf.renderTimer);
+        listPdf.renderTimer = null;
+      }
+      listPdf.renderTimer = setTimeout(function () {
+        listPdf.renderTimer = null;
+        listPdf.zoom = next;
+        updateListPdfZoomLabel();
+        renderListPdfCanvas().then(function () {
+          clearPreview();
+          scroll.scrollLeft = Math.max(0, relX * ratio - (fx - rect.left));
+          scroll.scrollTop = Math.max(0, relY * ratio - (fy - rect.top));
+        }).catch(function () { clearPreview(); });
+      }, 48);
+    }
+
+    scroll.addEventListener("touchstart", function (e) {
+      if (!e.touches || !e.touches.length) return;
+      if (listPdf.inkDrawing) return;
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pan = null;
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const mid = midPoint(e.touches[0], e.touches[1]);
+        const base = (liveZoom != null) ? liveZoom : listPdf.zoom;
+        pinch = { dist: d, zoom: base, cx: mid.x, cy: mid.y };
+        return;
+      }
+      pinch = null;
+      const zNow = (liveZoom != null) ? liveZoom : listPdf.zoom;
+      if (e.touches.length === 1) {
+        const t0 = e.touches[0];
+        if (zNow > 1.01) {
+          swipe = null;
+          pan = { x: t0.clientX, y: t0.clientY, sl: scroll.scrollLeft, st: scroll.scrollTop };
+          scroll.classList.add("is-panning");
+        } else {
+          pan = null;
+          swipe = { x: t0.clientX, y: t0.clientY, t: Date.now() };
+        }
+      }
+    }, { passive: false });
+
+    scroll.addEventListener("touchmove", function (e) {
+      if (!e.touches) return;
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        swipe = null;
+        pan = null;
+        scroll.classList.remove("is-panning");
+        const d = touchDist(e.touches[0], e.touches[1]);
+        const mid = midPoint(e.touches[0], e.touches[1]);
+        if (!pinch) {
+          const base = (liveZoom != null) ? liveZoom : listPdf.zoom;
+          pinch = { dist: d || 1, zoom: base, cx: mid.x, cy: mid.y };
+        }
+        const factor = d / (pinch.dist || 1);
+        applyLivePreview(clampZ(pinch.zoom * factor), mid.x, mid.y);
+        return;
+      }
+      const zNow = (liveZoom != null) ? liveZoom : listPdf.zoom;
+      if (pan && e.touches.length === 1 && zNow > 1.01) {
+        e.preventDefault();
+        const t0 = e.touches[0];
+        scroll.scrollLeft = pan.sl - (t0.clientX - pan.x);
+        scroll.scrollTop = pan.st - (t0.clientY - pan.y);
+        return;
+      }
+      if (swipe && e.touches.length === 1 && zNow <= 1.01) {
+        const t0 = e.touches[0];
+        const dx = t0.clientX - swipe.x;
+        const dy = t0.clientY - swipe.y;
+        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) e.preventDefault();
+      }
+    }, { passive: false });
+
+    function endPinch(e) {
+      if (pinch) {
+        const touches = e.touches;
+        if (!touches || touches.length < 2) {
+          const next = (liveZoom != null) ? liveZoom : listPdf.zoom;
+          const cx = pinch.cx;
+          const cy = pinch.cy;
+          pinch = null;
+          swipe = null;
+          commitAbsZoom(next, cx, cy);
+        }
+      }
+      if (pan && (!e.touches || e.touches.length === 0)) {
+        pan = null;
+        scroll.classList.remove("is-panning");
+      }
+      if (swipe && (!e.touches || e.touches.length === 0)) {
+        const s = swipe;
+        swipe = null;
+        const zNow = listPdf.zoom || 1;
+        if (zNow > 1.01 || listPdf.inkDrawing) return;
+        const dt = Date.now() - (s.t || 0);
+        if (dt > 800) return;
+        // Use last known from changedTouches if available
+        let cx = s.x, cy = s.y;
+        if (e.changedTouches && e.changedTouches[0]) {
+          cx = e.changedTouches[0].clientX;
+          cy = e.changedTouches[0].clientY;
+        }
+        const dx = cx - s.x;
+        const dy = cy - s.y;
+        if (Math.abs(dx) < SWIPE_MIN_DX || Math.abs(dy) > SWIPE_MAX_DY) return;
+        if (Math.abs(dx) <= Math.abs(dy) * 1.15) return;
+        if (dx < 0) stepListPdfPage(1);
+        else stepListPdfPage(-1);
+      }
+    }
+
+    scroll.addEventListener("touchend", endPinch, { passive: false });
+    scroll.addEventListener("touchcancel", endPinch, { passive: false });
+  }
+
+  /** Tree list 「匯入 PDF」 → open inside list panel (NOT media ingest). */
   function initTreeListPdfImport() {
     const input = $("tree-list-pdf-input");
     if (!input || input._listPdfBound) return;
     input._listPdfBound = true;
+    loadListPdfInkBag();
+    bindListPdfInkGestures();
+    bindListPdfGestures();
+
     input.addEventListener("change", function () {
       const files = input.files;
       if (!files || !files.length) return;
-      if (document.body.classList.contains("hide-media")) {
-        applyHideMedia(false);
+      // Prefer first PDF in selection; never send to media panel
+      let pdfFile = null;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (f && (/\.pdf$/i.test(f.name || "") || f.type === "application/pdf")) {
+          pdfFile = f;
+          break;
+        }
       }
-      if (window.GpkgMedia && typeof window.GpkgMedia.ingestFiles === "function") {
-        window.GpkgMedia.ingestFiles(files);
-      } else {
-        setImportStatus("媒體面板尚未就緒，無法匯入 PDF", "warn");
+      if (!pdfFile) {
+        setImportStatus("請選擇 PDF 檔", "warn");
+        input.value = "";
+        return;
+      }
+      openListPdfFile(pdfFile);
+      if (files.length > 1) {
+        setImportStatus("已開啟第 1 個 PDF 於列表內（其餘 " + (files.length - 1) + " 個未載入）", "ok");
       }
       input.value = "";
-      reflowAfterLayoutToggle();
+    });
+
+    const prev = $("tree-list-pdf-prev");
+    const next = $("tree-list-pdf-next");
+    const pageBtn = $("tree-list-pdf-page");
+    const clearInk = $("tree-list-pdf-clear-ink");
+    const closeBtn = $("tree-list-pdf-close");
+    if (prev) prev.addEventListener("click", function () { stepListPdfPage(-1); });
+    if (next) next.addEventListener("click", function () { stepListPdfPage(1); });
+    if (pageBtn) pageBtn.addEventListener("click", function () {
+      if (!listPdf.url) return;
+      const total = listPdf.pageCount || 1;
+      const cur = listPdf.page || 1;
+      const raw = window.prompt("跳至第幾頁？（1–" + total + "）", String(cur));
+      if (raw == null) return;
+      const n = parseInt(String(raw).trim(), 10);
+      if (!isFinite(n)) return;
+      jumpListPdfPage(n);
+    });
+    if (clearInk) clearInk.addEventListener("click", clearListPdfInkCurrent);
+    if (closeBtn) closeBtn.addEventListener("click", closeListPdf);
+
+    // Reflow list PDF when layout toggles / resize
+    window.addEventListener("resize", function () {
+      if (!listPdf.url) return;
+      applyListPdfZoom();
     });
   }
 
@@ -1917,10 +2695,16 @@
     const countEl = $("tree-list-count");
     if (!box) return;
     if (!state.trees.length) {
-      if (panel) panel.hidden = true;
       box.innerHTML = "";
       if (countEl) countEl.textContent = "";
-      document.body.classList.remove("has-tree-list");
+      // Keep panel open if list PDF is showing
+      if (document.body.classList.contains("has-tree-list-pdf")) {
+        document.body.classList.add("has-tree-list");
+        if (panel) panel.hidden = false;
+      } else {
+        if (panel) panel.hidden = true;
+        document.body.classList.remove("has-tree-list");
+      }
       renderAnnotOverlay();
       updateMapRestoreHint();
       return;

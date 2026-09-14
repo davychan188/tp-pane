@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -1744,6 +1744,162 @@ body.has-tree-list .tree-list-panel,
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* v104: list | PDF split inside tree-list-panel */
+.tree-list-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  overflow: hidden;
+}
+.tree-list-body > .tree-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.tree-list-pdf-pane {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 52%;
+  max-width: 58%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.tree-list-pdf-pane[hidden] {
+  display: none !important;
+}
+body.has-tree-list-pdf .tree-list-pdf-pane {
+  display: flex;
+}
+body.has-tree-list-pdf .tree-list-body > .tree-list {
+  flex: 1 1 48%;
+  max-width: none;
+}
+body:not(.has-tree-list-pdf) .tree-list-body > .tree-list {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+}
+.tree-list-pdf-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 4px 6px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+}
+.tree-list-pdf-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tag-fg);
+  margin-right: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-list-pdf-step {
+  min-width: 28px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.tree-list-pdf-page {
+  font-size: 11px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.tree-list-pdf-zoom-readout {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tree-list-pdf-scroll {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-2);
+  position: relative;
+  touch-action: none;
+}
+.tree-list-pdf-scroll.is-zoomed { cursor: grab; }
+.tree-list-pdf-scroll.is-panning { cursor: grabbing; }
+.tree-list-pdf-stage {
+  position: relative;
+  width: auto;
+  height: auto;
+  min-width: 100%;
+  transform-origin: 0 0;
+  will-change: transform;
+  touch-action: none;
+}
+.tree-list-pdf-canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  background: #fff;
+  touch-action: none;
+}
+.tree-list-pdf-ink-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+.tree-list-pdf-ink-layer .list-pdf-ink-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.tree-list-pdf-ink-layer .list-draw-ink,
+.tree-list-pdf-ink-layer .list-ink-preview {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.tree-list-pdf-ink-layer .list-ink-preview {
+  opacity: 0.75;
+}
+@media (max-width: 720px) {
+  body.has-tree-list-pdf .tree-list-body {
+    flex-direction: column;
+  }
+  body.has-tree-list-pdf .tree-list-pdf-pane {
+    flex: 1 1 48%;
+    max-width: none;
+    max-height: 52%;
+  }
+  body.has-tree-list-pdf .tree-list-body > .tree-list {
+    flex: 1 1 48%;
+    max-height: 52%;
+  }
+}
+
 .tree-list {
   flex: 1 1 auto;
   min-height: 0;
