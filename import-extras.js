@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v105: list PDF fills entire tree-list panel. v104: list PDF pane (not media). v103: media pinch. v102: hide-map. v101: Pencil short-tap 加樹.
+ * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
  * map PDF import is separate — neither blocks the other.
  * Hooks into window.GpkgViewer (set by app.js).
@@ -1010,7 +1010,7 @@
       try {
         const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
         const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=106";
+        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=107";
         listPdf.pdfjsReady = true;
       } catch (e) {
         console.warn("list pdf.js worker config failed", e);
@@ -1025,17 +1025,29 @@
     return name + "::" + pg;
   }
 
+  /** Same prefs as map annotate — always read live #map-ink-color / #map-ink-width. */
   function listInkPrefs() {
-    let color = state.inkColor || "#38bdf8";
-    let width = (isFinite(Number(state.inkWidth)) && Number(state.inkWidth) > 0) ? Number(state.inkWidth) : 2.25;
-    const colorEl = $("map-ink-color");
-    const widthEl = $("map-ink-width");
-    if (colorEl && colorEl.value) color = String(colorEl.value);
-    if (widthEl && widthEl.value != null && widthEl.value !== "") {
-      const w = Number(widthEl.value);
-      if (isFinite(w) && w > 0) width = w;
+    return currentInkPrefs();
+  }
+
+  function parkMapInkCtrlsForListPdf(on) {
+    const ctrls = $("map-ink-ctrls");
+    const host = $("tree-list-pdf-ink-host");
+    const home = $("map-ref-actions");
+    if (!ctrls) return;
+    if (on) {
+      if (host && ctrls.parentNode !== host) host.appendChild(ctrls);
+      ctrls.classList.add("on-list-pdf");
+    } else {
+      // Restore beside map-ref actions (before crop button if present)
+      if (home && ctrls.parentNode !== home) {
+        const crop = $("btn-map-crop");
+        if (crop && crop.parentNode === home) home.insertBefore(ctrls, crop);
+        else home.insertBefore(ctrls, home.firstChild);
+      }
+      ctrls.classList.remove("on-list-pdf");
     }
-    return { color: color, width: width };
+    syncInkControlsUi();
   }
 
   function normalizeListStroke(s) {
@@ -1212,9 +1224,13 @@
       // Ensure bottom list panel is visible so PDF can be seen (even with empty table)
       document.body.classList.add("has-tree-list");
       if (panel) panel.hidden = false;
-    } else if (!state.trees.length) {
-      document.body.classList.remove("has-tree-list");
-      if (panel) panel.hidden = true;
+      parkMapInkCtrlsForListPdf(true);
+    } else {
+      parkMapInkCtrlsForListPdf(false);
+      if (!state.trees.length) {
+        document.body.classList.remove("has-tree-list");
+        if (panel) panel.hidden = true;
+      }
     }
     reflowAfterLayoutToggle();
   }
