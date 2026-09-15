@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
+   v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -3218,7 +3218,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=108").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=109").catch(() => {});
   }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||

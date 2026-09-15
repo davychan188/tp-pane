@@ -1,5 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
+ * v109: project backup/restore (export+import .tp-pane.json package).
  * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
  * Works without a GeoPackage. Tree list / Excel import does not require a map PDF;
@@ -988,6 +989,493 @@
     }
   }
 
+  /* ========== v109: project backup / restore (.tp-pane.json) ========== */
+  const PROJECT_PKG_VERSION = 1;
+  const PROJECT_SHEET_MAX_BYTES = 6 * 1024 * 1024;
+  const PROJECT_EMBED_SOFT_TOTAL = 28 * 1024 * 1024;
+  const PROJECT_EMBED_HARD_TOTAL = 48 * 1024 * 1024;
+
+  function base64ToBlob(b64, mime) {
+    const bin = atob(String(b64 || ""));
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: mime || "application/octet-stream" });
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      const fr = new FileReader();
+      fr.onload = function () { resolve(fr.result); };
+      fr.onerror = function () { reject(fr.error || new Error("FileReader failed")); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  async function blobUrlToEmbed(url) {
+    if (!url || String(url).indexOf("blob:") !== 0) return null;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!blob || !blob.size) return null;
+      if (blob.size > PROJECT_SHEET_MAX_BYTES) {
+        return { skipped: true, reason: "sheet-too-large", size: blob.size };
+      }
+      const dataUrl = await blobToDataUrl(blob);
+      const parts = String(dataUrl || "").split(",");
+      const header = parts[0] || "";
+      const b64 = parts[1] || "";
+      if (!b64) return null;
+      const mimeMatch = header.match(/data:([^;]+)/);
+      return {
+        mime: (mimeMatch && mimeMatch[1]) || (blob.type || "image/png"),
+        base64: b64,
+        size: blob.size
+      };
+    } catch (err) {
+      console.warn("blobUrlToEmbed", err);
+      return null;
+    }
+  }
+
+  function projectStampFilename() {
+    const d = new Date();
+    const p = function (n) { return String(n).padStart(2, "0"); };
+    return "tp-pane-project-" +
+      d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" +
+      p(d.getHours()) + p(d.getMinutes()) + ".tp-pane.json";
+  }
+
+  async function buildProjectPackage() {
+    saveCurrentMapInk();
+    try { saveCurrentListPdfInk(); } catch (_) {}
+    const notes = [];
+    let embedTotal = 0;
+    const sheetsOut = [];
+    const sheets = state.mapSheets || [];
+    for (let i = 0; i < sheets.length; i++) {
+      const s = sheets[i];
+      if (!s) continue;
+      const rec = {
+        id: String(s.id || ""),
+        label: s.label || "",
+        kind: s.kind || "original",
+        sourceName: s.sourceName || "",
+        page: (typeof s.page === "number") ? s.page : null,
+        cropOf: s.cropOf ? {
+          x: Number(s.cropOf.x), y: Number(s.cropOf.y),
+          w: Number(s.cropOf.w), h: Number(s.cropOf.h)
+        } : null,
+        image: null
+      };
+      if (embedTotal >= PROJECT_EMBED_HARD_TOTAL) {
+        notes.push("圖紙影像總量過大，其餘圖紙未嵌入：" + (s.label || s.id));
+        sheetsOut.push(rec);
+        continue;
+      }
+      const emb = await blobUrlToEmbed(s.url);
+      if (emb && emb.skipped) {
+        notes.push("圖紙「" + (s.label || s.id) + "」過大未嵌入（" +
+          Math.round(emb.size / (1024 * 1024)) + " MB）");
+      } else if (emb && emb.base64) {
+        if (embedTotal + emb.size > PROJECT_EMBED_HARD_TOTAL) {
+          notes.push("圖紙影像總量達上限，略過：「" + (s.label || s.id) + "」");
+        } else {
+          rec.image = { mime: emb.mime, base64: emb.base64 };
+          embedTotal += emb.size;
+          if (embedTotal >= PROJECT_EMBED_SOFT_TOTAL) {
+            notes.push("圖紙影像總量較大（約 " + Math.round(embedTotal / (1024 * 1024)) + " MB）");
+          }
+        }
+      } else if (s.url) {
+        notes.push("無法嵌入圖紙影像：「" + (s.label || s.id) + "」");
+      }
+      sheetsOut.push(rec);
+    }
+
+    const mapMeta = state.mapRefUrl
+      ? { name: state.mapRefName || "", kind: state.mapRefKind || null }
+      : (state.mapRefMeta || null);
+
+    let listPdfInk = {};
+    try {
+      // Prefer in-memory bag (includes current page)
+      listPdfInk = listPdf.inkByKey || {};
+      if (!listPdfInk || !Object.keys(listPdfInk).length) {
+        const raw = localStorage.getItem(LS_LIST_PDF_INK);
+        if (raw) listPdfInk = JSON.parse(raw) || {};
+      }
+    } catch (_) { listPdfInk = {}; }
+
+    const pkg = {
+      version: PROJECT_PKG_VERSION,
+      exportedAt: new Date().toISOString(),
+      app: "tp-pane",
+      appVersion: 109,
+      sourceName: state.sourceName || "",
+      idMode: state.idMode || "auto",
+      forceMapRef: document.body.classList.contains("force-map-ref"),
+      mapRef: mapMeta,
+      trees: serializeTrees(),
+      drawMapKey: state.drawMapKey || null,
+      drawStrokes: serializeDrawStrokes(),
+      drawStrokesByMap: serializeDrawStrokesByMap(),
+      activeMapSheetId: state.activeMapSheetId || null,
+      mapSheets: sheetsOut,
+      listPdfInk: listPdfInk,
+      listPdfName: listPdf.name || "",
+      notes: notes
+    };
+    return pkg;
+  }
+
+  async function exportProjectPackage() {
+    setImportStatus("正在匯出專案…", "");
+    try {
+      const pkg = await buildProjectPackage();
+      const hasTrees = Array.isArray(pkg.trees) && pkg.trees.length;
+      const hasInk = pkg.drawStrokesByMap && Object.keys(pkg.drawStrokesByMap).length;
+      const hasSheets = Array.isArray(pkg.mapSheets) && pkg.mapSheets.length;
+      const hasListInk = pkg.listPdfInk && Object.keys(pkg.listPdfInk).length;
+      if (!hasTrees && !hasInk && !hasSheets && !hasListInk) {
+        setImportStatus("沒有可匯出的專案資料（樹木／圖紙／墨跡皆空）", "warn");
+        return;
+      }
+      const json = JSON.stringify(pkg);
+      const bytes = new Blob([json], { type: "application/json" }).size;
+      if (bytes > PROJECT_EMBED_HARD_TOTAL * 1.35) {
+        const okHuge = confirm(
+          "專案檔約 " + Math.round(bytes / (1024 * 1024)) +
+          " MB，下載可能較慢或失敗。仍要匯出？"
+        );
+        if (!okHuge) {
+          setImportStatus("已取消匯出", "warn");
+          return;
+        }
+      }
+      const filename = projectStampFilename();
+      const blob = new Blob([json], { type: "application/json" });
+      const shared = tryShareFile(blob, filename);
+      if (shared && typeof shared.then === "function") {
+        shared.then(function () {
+          setImportStatus("已分享專案：" + filename, "ok");
+        }).catch(function () {
+          triggerBlobDownload(blob, filename);
+          finishExportStatus(pkg, filename);
+        });
+        return;
+      }
+      triggerBlobDownload(blob, filename);
+      finishExportStatus(pkg, filename);
+    } catch (err) {
+      console.error(err);
+      setImportStatus("匯出專案失敗：" + (err && err.message ? err.message : err), "error");
+    }
+  }
+
+  function finishExportStatus(pkg, filename) {
+    const nTrees = (pkg.trees && pkg.trees.length) || 0;
+    const nSheets = (pkg.mapSheets && pkg.mapSheets.length) || 0;
+    const nEmbed = (pkg.mapSheets || []).filter(function (s) { return s && s.image && s.image.base64; }).length;
+    let msg = "已匯出專案 " + filename + "（" + nTrees + " 棵樹 · " + nEmbed + "/" + nSheets + " 圖紙影像）";
+    if (pkg.notes && pkg.notes.length) msg += " · 注意：" + pkg.notes[0];
+    setImportStatus(msg, "ok");
+  }
+
+  function applyListPdfInkFromPackage(bag) {
+    const out = {};
+    if (bag && typeof bag === "object") {
+      Object.keys(bag).forEach(function (k) {
+        if (!Array.isArray(bag[k])) return;
+        const strokes = bag[k].map(normalizeListStroke).filter(Boolean);
+        if (strokes.length) out[k] = strokes;
+      });
+    }
+    listPdf.inkByKey = out;
+    try {
+      localStorage.setItem(LS_LIST_PDF_INK, JSON.stringify(out));
+    } catch (_) {}
+    if (listPdf.url) {
+      loadListPdfInkForCurrent();
+    }
+  }
+
+  async function applyImportedMapSheets(sheetsPayload, activeId, mapMeta) {
+    const list = Array.isArray(sheetsPayload) ? sheetsPayload : [];
+    // Clear existing map view without wiping ink bag (caller already set ink)
+    if (state.cropMode) {
+      try { exitCropMode(); } catch (e) { state.cropMode = false; }
+    }
+    revokeMapRefUrl();
+    hideMapRefViewers();
+    resetMapRefZoom();
+
+    const rebuilt = [];
+    let embedOk = 0;
+    let embedFail = 0;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (!s || !s.id) continue;
+      let url = null;
+      if (s.image && s.image.base64) {
+        try {
+          const blob = base64ToBlob(s.image.base64, s.image.mime || "image/png");
+          url = rememberUrl(URL.createObjectURL(blob));
+          embedOk += 1;
+        } catch (err) {
+          console.warn("sheet base64 restore failed", err);
+          embedFail += 1;
+        }
+      } else {
+        embedFail += 1;
+      }
+      rebuilt.push({
+        id: String(s.id),
+        label: s.label || String(s.id),
+        kind: s.kind || "original",
+        sourceName: s.sourceName || (mapMeta && mapMeta.name) || "",
+        page: (typeof s.page === "number") ? s.page : undefined,
+        cropOf: s.cropOf || null,
+        url: url
+      });
+    }
+
+    // Keep sheets even without url so ink keys remain meaningful; display needs url
+    state.mapSheets = rebuilt.filter(function (s) { return !!s.url; });
+    const name = (mapMeta && mapMeta.name) || (state.mapSheets[0] && state.mapSheets[0].sourceName) || "";
+    state.mapRefName = name;
+    state.mapRefMeta = mapMeta ? { name: mapMeta.name || name, kind: mapMeta.kind || "image" } : (name ? { name: name, kind: "image" } : null);
+    state.mapRefKind = "image";
+    state.mapRefRasterized = state.mapSheets.length > 0;
+
+    let active = null;
+    if (activeId) {
+      for (let i = 0; i < state.mapSheets.length; i++) {
+        if (state.mapSheets[i].id === activeId) { active = state.mapSheets[i]; break; }
+      }
+    }
+    if (!active) active = state.mapSheets[0] || null;
+    if (active) {
+      state.activeMapSheetId = active.id;
+      state.mapRefUrl = active.url;
+      state.mapRefRasterUrl = active.url;
+      loadMapInk(active.id);
+      showSheetOnImg(active);
+      document.body.classList.add("force-map-ref");
+    } else {
+      state.activeMapSheetId = null;
+      state.mapRefUrl = null;
+      state.mapRefRasterUrl = null;
+      document.body.classList.remove("force-map-ref");
+    }
+    renderMapSheetTabs();
+    updateMapRefVisibility();
+    ensureAnnotLayerObserver();
+    applyMapRefZoom();
+    renderAnnotOverlay();
+    updateMapRestoreHint();
+    return { embedOk: embedOk, embedFail: embedFail, sheetCount: state.mapSheets.length };
+  }
+
+  async function importProjectPackage(file) {
+    if (!file) return;
+    setImportStatus("正在讀取專案…", "");
+    let text;
+    try {
+      text = await file.text();
+    } catch (err) {
+      setImportStatus("無法讀取專案檔：" + (err && err.message ? err.message : err), "error");
+      return;
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      setImportStatus("專案檔不是有效的 JSON", "error");
+      return;
+    }
+    if (!data || typeof data !== "object") {
+      setImportStatus("專案檔內容無效", "error");
+      return;
+    }
+    if (data.app && data.app !== "tp-pane") {
+      setImportStatus("此檔案不是 tp-pane 專案備份（app=" + data.app + "）", "error");
+      return;
+    }
+    const hasTrees = Array.isArray(data.trees) && data.trees.length;
+    const hasDrawBag = !!(data.drawStrokesByMap && typeof data.drawStrokesByMap === "object" &&
+      Object.keys(data.drawStrokesByMap).some(function (k) {
+        return Array.isArray(data.drawStrokesByMap[k]) && data.drawStrokesByMap[k].length;
+      }));
+    const hasDraw = Array.isArray(data.drawStrokes) && data.drawStrokes.length;
+    const hasSheets = Array.isArray(data.mapSheets) && data.mapSheets.length;
+    const hasListInk = !!(data.listPdfInk && typeof data.listPdfInk === "object" &&
+      Object.keys(data.listPdfInk).length);
+    if (!hasTrees && !hasDraw && !hasDrawBag && !hasSheets && !hasListInk) {
+      setImportStatus("專案檔沒有可還原的資料", "warn");
+      return;
+    }
+    if (state.trees && state.trees.length) {
+      const ok = confirm("目前已有樹木資料，匯入專案會覆寫現有列表／圖註／圖紙。確定繼續？");
+      if (!ok) {
+        setImportStatus("已取消匯入專案", "warn");
+        return;
+      }
+    }
+
+    restoring = true;
+    try {
+      // Trees + ink first (mirrors restoreSession)
+      state.sourceName = data.sourceName || "";
+      if (data.idMode) setIdMode(data.idMode);
+
+      clearLeafletAnnotMarkers();
+      state.drawStrokesByMap = {};
+      if (data.drawStrokesByMap && typeof data.drawStrokesByMap === "object") {
+        Object.keys(data.drawStrokesByMap).forEach(function (k) {
+          const key = mapInkKey(k) || String(k);
+          if (!key) return;
+          const list = data.drawStrokesByMap[k];
+          if (!Array.isArray(list)) return;
+          const strokes = list.map(normalizeStrokeRec).filter(Boolean);
+          if (strokes.length) state.drawStrokesByMap[key] = strokes;
+        });
+      }
+      const metaName = (data.mapRef && data.mapRef.name) || "";
+      const preferKey = mapInkKey(data.drawMapKey || metaName) || (data.drawMapKey ? String(data.drawMapKey) : "");
+      if (preferKey && state.drawStrokesByMap[preferKey]) {
+        state.drawMapKey = preferKey;
+        state.drawStrokes = (state.drawStrokesByMap[preferKey] || []).slice();
+      } else if (hasDraw) {
+        state.drawStrokes = data.drawStrokes.map(normalizeStrokeRec).filter(Boolean);
+        if (preferKey) {
+          state.drawMapKey = preferKey;
+          state.drawStrokesByMap[preferKey] = serializeDrawStrokes(state.drawStrokes);
+        } else {
+          state.drawMapKey = null;
+        }
+      } else {
+        state.drawStrokes = [];
+        state.drawMapKey = preferKey || null;
+      }
+
+      state.trees = hasTrees ? data.trees.map(function (rec) {
+        const feature = rebuildFeature(rec);
+        const hasCoords = !!(feature.geometry && feature.geometry.type === "Point");
+        return {
+          id: String(rec.id),
+          props: feature.properties,
+          feature: feature,
+          hasCoords: hasCoords,
+          x: rec.x == null || rec.x === "" ? null : Number(rec.x),
+          y: rec.y == null || rec.y === "" ? null : Number(rec.y),
+          path: Array.isArray(rec.path) && rec.path.length ? rec.path.map(function (p) {
+            return { x: Number(p.x), y: Number(p.y) };
+          }).filter(function (p) { return isFinite(p.x) && isFinite(p.y); }) : null,
+          annot: !!rec.annot,
+          leafletMarker: null,
+          source: rec.source || ""
+        };
+      }) : [];
+
+      renderTreeList();
+      renderAnnotOverlay();
+
+      const importedMapped = state.trees.filter(function (t) { return t.hasCoords && !t.annot; });
+      const annotMapped = state.trees.filter(function (t) { return t.hasCoords && t.annot; });
+      if (importedMapped.length && window.GpkgViewer && typeof window.GpkgViewer.loadTreeFeatures === "function") {
+        try {
+          await window.GpkgViewer.loadTreeFeatures(
+            importedMapped.map(function (t) { return t.feature; }),
+            state.sourceName || "project-import"
+          );
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+      annotMapped.forEach(function (t) {
+        t.leafletMarker = addLeafletAnnotMarker(t);
+      });
+
+      if (data.forceMapRef) document.body.classList.add("force-map-ref");
+      else document.body.classList.remove("force-map-ref");
+
+      const mapResult = await applyImportedMapSheets(
+        data.mapSheets || [],
+        data.activeMapSheetId || null,
+        data.mapRef || null
+      );
+
+      applyListPdfInkFromPackage(data.listPdfInk || {});
+
+      const needListPdf = !!(hasListInk || data.listPdfName) && !listPdf.url;
+      const needMapFile = !!(data.mapRef && data.mapRef.name) && !(mapResult && mapResult.sheetCount);
+      const parts = [];
+      parts.push("已匯入專案：" + state.trees.length + " 棵樹");
+      if (mapResult && mapResult.sheetCount) {
+        parts.push(mapResult.sheetCount + " 張圖紙");
+      }
+      if (needMapFile) {
+        parts.push("地圖原檔「" + data.mapRef.name + "」需重新匯入（圖紙影像未包含於備份）");
+      } else if (mapResult && mapResult.embedFail && !mapResult.embedOk && hasSheets) {
+        parts.push("圖紙影像未能還原，請重新匯入地圖 PDF／圖片");
+      }
+      if (needListPdf) {
+        const nm = data.listPdfName ? "「" + data.listPdfName + "」" : "";
+        parts.push("列表 PDF 原檔" + nm + "需重新匯入（墨跡已保留）");
+      }
+      const kind = (needListPdf || needMapFile) ? "warn" : "ok";
+      setImportStatus(parts.join(" · "), kind);
+      if (state.trees.length) selectTreeFromList(state.trees[0].id);
+      closeMobileMenuAfterContent();
+    } catch (err) {
+      console.error(err);
+      setImportStatus("匯入專案失敗：" + (err && err.message ? err.message : err), "error");
+    } finally {
+      restoring = false;
+      // Must persist after restoring=false — persistSession no-ops while restoring
+      try { persistSession(); } catch (_) {}
+    }
+  }
+
+  function bindProjectBackupUi() {
+    function bindExport(btn) {
+      if (!btn || btn._projectExportBound) return;
+      btn._projectExportBound = true;
+      btn.addEventListener("click", function (ev) {
+        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+        exportProjectPackage();
+      });
+    }
+    function bindImportInput(input) {
+      if (!input || input._projectImportBound) return;
+      input._projectImportBound = true;
+      input.addEventListener("change", function () {
+        const f = input.files && input.files[0];
+        input.value = "";
+        if (!f) return;
+        const name = (f.name || "").toLowerCase();
+        if (name && !/\.json$/i.test(name) && !/\.tp-pane\.json$/i.test(name)) {
+          // still allow if MIME is json
+          const t = (f.type || "").toLowerCase();
+          if (t && t.indexOf("json") < 0 && t !== "application/octet-stream" && t !== "") {
+            setImportStatus("請選擇 .tp-pane.json 或 .json 專案檔", "warn");
+            return;
+          }
+        }
+        importProjectPackage(f).catch(function (err) {
+          console.error(err);
+          setImportStatus("匯入專案失敗：" + (err && err.message ? err.message : err), "error");
+        });
+      });
+    }
+    bindExport($("btn-export-project"));
+    bindExport($("btn-export-project-side"));
+    bindImportInput($("project-file-input"));
+    bindImportInput($("project-file-input-side"));
+  }
+
+
   function applyHideMedia(hide) {
     hide = !!hide;
     document.body.classList.toggle("hide-media", hide);
@@ -1113,7 +1601,7 @@
       try {
         const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
         const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=108";
+        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=109";
         listPdf.pdfjsReady = true;
       } catch (e) {
         console.warn("list pdf.js worker config failed", e);
@@ -5279,6 +5767,7 @@
     initHideMapToggle();
     initHideTreesToggle();
     initTreeListPdfImport();
+    bindProjectBackupUi();
 
     function bindExcelInput(el) {
       if (!el) return;
