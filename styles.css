@@ -24,7 +24,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fixed on body). v110: topbar 匯入/隱藏/匯出 menus; larger import hits; accept all files; PDF.js blob worker. v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fixed on body). v110: topbar 匯入/隱藏/匯出 menus; larger import hits; accept all files; PDF.js blob worker. v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -40,7 +40,7 @@ html, body {
 }
 body {
   display: grid;
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) 1fr var(--table-h, 240px);
+  grid-template-rows: auto 1fr var(--table-h, 240px);
   grid-template-columns: 300px minmax(0, 1fr);
   grid-template-areas:
     "top top"
@@ -54,7 +54,7 @@ body {
   grid-area: map;
 }
 body.table-collapsed {
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) 1fr 48px;
+  grid-template-rows: auto 1fr 48px;
 }
 body.table-collapsed .table-wrap,
 body.table-collapsed .col-menu,
@@ -75,9 +75,12 @@ body.table-collapsed .table-hint {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
-  height: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+  /* v113: no double safe-area — height auto + padding only once */
+  height: auto;
+  min-height: var(--topbar-h);
+  box-sizing: border-box;
   padding: 0 10px;
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(4px, env(safe-area-inset-top, 0px));
   background: linear-gradient(180deg, var(--chrome), var(--chrome-2));
   border-bottom: 1px solid var(--line);
   touch-action: manipulation; /* v85: chrome must not page-pinch */
@@ -497,6 +500,10 @@ select, .btn {
   min-width: 0;
   overflow: hidden;
   grid-area: map;
+  margin: 0;
+  padding-top: 0;
+  align-self: stretch;
+  min-height: 0;
   background:
     radial-gradient(1200px 500px at 20% 0%, rgba(47,157,99,0.08), transparent 50%),
     var(--bg);
@@ -793,10 +800,12 @@ body.table-collapsed .status { bottom: 12px; }
     flex-wrap: nowrap;
     align-items: center;
     gap: 6px;
+    height: auto;
+    min-height: var(--topbar-h);
+    box-sizing: border-box;
     padding: 4px 8px;
-    padding-top: calc(4px + env(safe-area-inset-top));
+    padding-top: max(4px, env(safe-area-inset-top, 0px));
     overflow: hidden;
-    min-height: 0;
   }
   #btn-menu { flex: 0 0 auto; }
   .brand {
@@ -848,6 +857,8 @@ body.table-collapsed .status { bottom: 12px; }
 
   .sidebar {
     position: fixed;
+    /* v113: leave grid — template areas have no "side" on tablet */
+    grid-area: unset !important;
     /* Above map-ref PDF (z=5) and status (900); below topbar (1200) */
     z-index: 1100;
     top: 0;
@@ -911,12 +922,17 @@ body.tp-mapref-zooming .annot-marker-label {
   grid-area: media;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  padding: 4px 6px;
+  /* v113: flush under topbar; compact chrome */
+  margin: 0;
+  padding: 0 4px 0;
+  padding-top: 0;
+  align-self: stretch;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
+  position: relative;
 }
 body.media-layout .media-panel {
   display: flex;
@@ -924,14 +940,14 @@ body.media-layout .media-panel {
 body.media-layout {
   /* Wireframe: map | PDF on top; catalog/attrs OR tree list full-width bottom */
   grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
+  grid-template-rows: auto minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
   grid-template-areas:
     "top top top"
     "side map media"
     "side table table";
 }
 body.media-layout.has-tree-list {
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
+  grid-template-rows: auto minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
 }
 /* Excel / annotate trees → spreadsheet spans under map + PDF */
 body.media-layout.has-tree-list {
@@ -998,7 +1014,7 @@ body.media-layout.hide-map.hide-media .media-panel {
 }
 /* v108: hide tree list / attr table → map+media expand into former bottom row */
 body.media-layout.hide-trees {
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top top"
     "side map media";
@@ -1014,7 +1030,7 @@ body.media-layout.hide-trees .table-panel {
 }
 body.media-layout.hide-trees.hide-media {
   grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top"
     "side map";
@@ -1026,7 +1042,7 @@ body.media-layout.hide-trees.hide-media.has-tree-list {
 }
 body.media-layout.hide-trees.hide-map {
   grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top"
     "side media";
@@ -1038,7 +1054,7 @@ body.media-layout.hide-trees.hide-map.has-tree-list {
 }
 body.media-layout.hide-trees.hide-map.hide-media {
   grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top"
     "side map";
@@ -1049,7 +1065,7 @@ body.media-layout.hide-trees.hide-map.hide-media.has-tree-list {
     "side map";
 }
 body.media-layout.table-collapsed:not(.has-tree-list) {
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) 1.35fr minmax(160px, 0.65fr);
+  grid-template-rows: auto 1.35fr minmax(160px, 0.65fr);
 }
 body.media-layout.table-collapsed .feature-attrs {
   max-height: none;
@@ -1543,10 +1559,20 @@ body.media-layout.table-collapsed .feature-attrs {
 }
 
 .media-pdf-controls {
+  /* v113: overlay bottom of media panel — PDF uses full cell */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid var(--line);
+  box-sizing: border-box;
 }
 .media-pdf-nav-row {
   display: flex;
@@ -2115,7 +2141,7 @@ body:not(.has-tree-list-pdf) .tree-list-body > .tree-list {
 }
 /* Give more vertical room for handwriting / pinch when list PDF is open */
 body.media-layout.has-tree-list.has-tree-list-pdf {
-  grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)) minmax(0, 0.75fr) var(--tree-list-h, minmax(200px, 38vh));
+  grid-template-rows: auto minmax(0, 0.75fr) var(--tree-list-h, minmax(200px, 38vh));
 }
 @media (max-width: 1180px) {
   body.media-layout.has-tree-list.has-tree-list-pdf {
@@ -2600,6 +2626,9 @@ body.media-layout .map-restore-hint,
   flex-direction: column;
   align-self: stretch;
   justify-self: stretch;
+  margin: 0;
+  padding: 0;
+  padding-top: 0;
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -2618,17 +2647,22 @@ body.media-layout .map-restore-hint,
   align-items: center;
   gap: 4px;
   padding: 2px 4px;
-  background: var(--panel);
+  background: rgba(255, 255, 255, 0.92);
   border-top: 1px solid var(--line);
   border-bottom: 0;
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  position: relative;
+  /* v113: float over bottom of map so viewer uses full cell height */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 10; /* above map-ref-viewer / annotate layer — keep 切換地圖 clickable */
   flex-wrap: nowrap;
   min-height: 0;
+  box-sizing: border-box;
 }
 .map-ref-toolbar #map-ref-label,
 .map-ref-controls #map-ref-label,
@@ -3404,6 +3438,9 @@ body.hide-trees #btn-toggle-trees {
 .map-ref-viewer {
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
+  /* controls overlay at bottom — no reserved chrome row */
+  padding-bottom: 0;
 }
 
 /* v112: list PDF fit-page — pane must give scroll a real height */
@@ -3419,4 +3456,42 @@ body.has-tree-list-pdf .tree-list-pdf-pane {
 body.has-tree-list-pdf .tree-list-pdf-scroll {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+
+/* v113: flush map|media under topbar; kill unused gap */
+#map,
+.map-ref-panel,
+.media-panel {
+  margin: 0;
+  padding-top: 0;
+  align-self: stretch;
+  min-height: 0;
+}
+body.media-layout {
+  grid-template-rows: auto minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
+}
+body.media-layout.has-tree-list {
+  grid-template-rows: auto minmax(0, 1fr) var(--tree-list-h, minmax(100px, 20vh));
+}
+body.media-layout.hide-trees,
+body.media-layout.hide-trees.hide-media,
+body.media-layout.hide-trees.hide-map,
+body.media-layout.hide-trees.hide-map.hide-media {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+body.media-layout.table-collapsed:not(.has-tree-list) {
+  grid-template-rows: auto 1.35fr minmax(160px, 0.65fr);
+}
+@media (max-width: 1180px) {
+  body.media-layout,
+  body.media-layout.has-tree-list {
+    grid-template-rows: auto minmax(0, 1fr) var(--tree-list-h, minmax(100px, 22vh));
+  }
+  body.media-layout.hide-trees,
+  body.media-layout.hide-trees.hide-media,
+  body.media-layout.hide-trees.hide-map,
+  body.media-layout.hide-trees.hide-map.hide-media {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
 }

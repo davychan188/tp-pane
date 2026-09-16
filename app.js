@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
+   v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -3413,7 +3413,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=112").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=113").catch(() => {});
   }
 
 

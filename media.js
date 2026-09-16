@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v112 densify; v111 portal topbar menus; v110 topbar menus + PDF blob worker + import UX; v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
+ * Media panel: PDF page viewer via pdf.js canvas (v113 flush gap; v112 densify; v111 portal topbar menus; v110 topbar menus + PDF blob worker + import UX; v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -244,7 +244,7 @@
     if (base) {
       src = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
     } else {
-      src = "vendor/pdf.worker.min.js?v=112";
+      src = "vendor/pdf.worker.min.js?v=113";
     }
     try {
       return new URL(src, location.href).href;
