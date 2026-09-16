@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
+   v114: tree-list chrome out; pen on topbar. v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -70,7 +70,7 @@
 
   const $ = (id) => document.getElementById(id);
 
-  // v112/v111: topbar + map-under 匯入／隱藏／匯出／地圖 — portal panels to body (iPad Safari clips fixed under overflow)
+  // v114/v112/v111: topbar + map-under 匯入／隱藏／匯出／筆／地圖 — portal panels to body (iPad Safari clips fixed under overflow)
   (function initTopActionMenus() {
     try {
       const backdrop = $("top-more-backdrop");
@@ -105,11 +105,12 @@
           return;
         }
         const r = btn.getBoundingClientRect();
-        const width = Math.min(360, Math.floor(window.innerWidth * 0.92));
         const kind = wrap.getAttribute("data-top-menu");
+        let width = Math.min(360, Math.floor(window.innerWidth * 0.92));
+        if (kind === "pen") width = Math.min(280, width);
         let left;
         if (kind === "export") left = r.right - width;
-        else if (kind === "hide") left = r.left + r.width / 2 - width / 2;
+        else if (kind === "hide" || kind === "pen") left = r.left + r.width / 2 - width / 2;
         else left = r.left;
         left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
         const top = Math.min(r.bottom + 8, window.innerHeight - 24);
@@ -3413,7 +3414,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=113").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=114").catch(() => {});
   }
 
 

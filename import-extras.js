@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v113: flush map/media under topbar. v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (overflow clip fix). v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
+ * v114: tree-list chrome out; pen on topbar. v113: flush map/media under topbar. v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (overflow clip fix). v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
  * v109: project backup/restore (export+import .tp-pane.json package).
  * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
@@ -907,21 +907,20 @@
       widthEl.onchange = onWidth;
       widthEl._inkBound = true;
     }
-    // Event delegation on under-map toolbar (survives DOM moves)
-    const bar = $("map-ref-controls");
-    if (bar && !bar._inkDelegateBound) {
-      bar._inkDelegateBound = true;
-      bar.addEventListener("input", function (e) {
-        const t = e.target;
-        if (!t) return;
-        if (t.id === "map-ink-color" || t.id === "map-ink-width") applyInkPrefFromControls();
-      }, true);
-      bar.addEventListener("change", function (e) {
-        const t = e.target;
-        if (!t) return;
-        if (t.id === "map-ink-color" || t.id === "map-ink-width") applyInkPrefFromControls();
-      }, true);
+    // Event delegation (v114: ink in topbar「筆」; also map-ref for legacy)
+    function inkDelegate(e) {
+      const t = e.target;
+      if (!t) return;
+      if (t.id === "map-ink-color" || t.id === "map-ink-width") applyInkPrefFromControls();
     }
+    ["top-panel-pen", "map-ref-controls"].forEach(function (id) {
+      const bar = $(id);
+      if (bar && !bar._inkDelegateBound) {
+        bar._inkDelegateBound = true;
+        bar.addEventListener("input", inkDelegate, true);
+        bar.addEventListener("change", inkDelegate, true);
+      }
+    });
   }
 
     function persistSession() {
@@ -1724,7 +1723,7 @@
     const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "";
     let src = base
       ? String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1")
-      : "vendor/pdf.worker.min.js?v=113";
+      : "vendor/pdf.worker.min.js?v=114";
     try { return new URL(src, location.href).href; } catch (_) { return src; }
   }
 
@@ -1796,22 +1795,8 @@
   }
 
   function parkMapInkCtrlsForListPdf(on) {
-    const ctrls = $("map-ink-ctrls");
-    const host = $("tree-list-pdf-ink-host");
-    // v112: ink lives in 地圖 submenu section (fallback: tools panel / map actions)
-    const home = document.querySelector(".map-tools-section") ||
-      $("top-panel-map-tools") ||
-      $("map-ref-actions");
-    if (!ctrls) return;
-    if (on) {
-      if (host && ctrls.parentNode !== host) host.appendChild(ctrls);
-      ctrls.classList.add("on-list-pdf");
-    } else {
-      if (home && ctrls.parentNode !== home) {
-        home.insertBefore(ctrls, home.firstChild);
-      }
-      ctrls.classList.remove("on-list-pdf");
-    }
+    // v114: ink ctrls live in topbar「筆」; no park-into-list
+    void on;
     syncInkControlsUi();
   }
 
@@ -2524,7 +2509,7 @@
     scroll.addEventListener("touchcancel", endPinch, { passive: false });
   }
 
-  /** Tree list 「匯入 PDF」 → open inside list panel (NOT media ingest). */
+  /** Topbar／列表 「匯入列表 PDF」 → open inside list panel (NOT media ingest). */
   function initTreeListPdfImport() {
     const input = $("tree-list-pdf-input");
     if (!input || input._listPdfBound) return;
@@ -2560,7 +2545,6 @@
     const prev = $("tree-list-pdf-prev");
     const next = $("tree-list-pdf-next");
     const pageSel = $("tree-list-pdf-page");
-    const clearInk = $("tree-list-pdf-clear-ink");
     const closeBtn = $("tree-list-pdf-close");
     if (prev) prev.addEventListener("click", function () { stepListPdfPage(-1); });
     if (next) next.addEventListener("click", function () { stepListPdfPage(1); });
@@ -2573,7 +2557,7 @@
         jumpListPdfPage(n);
       });
     }
-    if (clearInk) clearInk.addEventListener("click", clearListPdfInkCurrent);
+    // v114: 清墨 button removed — clearListPdfInkCurrent kept for undo / future use
     if (closeBtn) closeBtn.addEventListener("click", closeListPdf);
 
     // Reflow list PDF when layout toggles / resize / panel drag
@@ -5940,11 +5924,11 @@
       if (!seg) return;
       setIdMode(seg.getAttribute("data-id-mode"));
     });
-    ["btn-annot-export", "btn-annot-export-bar", "btn-annot-export-float", "btn-annot-export-list"].forEach((id) => {
+    ["btn-annot-export", "btn-annot-export-bar", "btn-annot-export-float", "btn-annot-export-top"].forEach((id) => {
       const el = $(id);
       if (el) el.addEventListener("click", exportTreeListCsv);
     });
-    ["btn-annot-export-xlsx", "btn-annot-export-xlsx-bar", "btn-annot-export-xlsx-list"].forEach((id) => {
+    ["btn-annot-export-xlsx", "btn-annot-export-xlsx-bar", "btn-annot-export-xlsx-top"].forEach((id) => {
       const el = $(id);
       if (el) el.addEventListener("click", exportTreeListXlsx);
     });

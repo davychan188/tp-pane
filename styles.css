@@ -24,7 +24,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fixed on body). v110: topbar 匯入/隱藏/匯出 menus; larger import hits; accept all files; PDF.js blob worker. v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v114: tree-list chrome out; pen on topbar. v113: flush map/media under topbar (kill iPad white gap). v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fixed on body). v110: topbar 匯入/隱藏/匯出 menus; larger import hits; accept all files; PDF.js blob worker. v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -2059,15 +2059,15 @@ body.has-tree-list .tree-list-panel,
 .tree-list-panel[hidden] {
   display: none !important;
 }
-.tree-list-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  flex: 0 0 auto;
-  min-width: 0;
-  min-height: 28px;
-  padding: 2px 0 0;
+.tree-list-head { display: none !important; }
+/* v114: count kept for JS; not shown in list chrome */
+.tree-list-panel > .tree-list-count-tag {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 .tree-list-count-tag,
 .tree-list-panel .card-title .tag {
@@ -2148,19 +2148,7 @@ body.media-layout.has-tree-list.has-tree-list-pdf {
     grid-template-rows: auto minmax(0, 0.75fr) var(--tree-list-h, minmax(180px, 40vh));
   }
 }
-.tree-list-pdf-ink-host {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 4px;
-}
-.tree-list-pdf-ink-host .map-ink-ctrls,
-.map-ink-ctrls.on-list-pdf {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-}
+/* v114: ink host removed from list PDF toolbar */
 .tree-list-pdf-toolbar {
 
   display: flex;
@@ -2704,9 +2692,14 @@ body.media-layout .map-restore-hint,
   padding: 4px 2px 8px;
 }
 .map-tools-page-nav[hidden] { display: none !important; }
-#top-panel-map-tools .map-ink-ctrls {
+#top-panel-pen .map-ink-ctrls {
   width: 100%;
   justify-content: flex-start;
+  padding: 8px 6px;
+  box-sizing: border-box;
+}
+#top-panel-pen .map-ink-ctrl input[type="range"] {
+  width: min(160px, 48vw);
 }
 .map-ref-actions .btn,
 .map-ref-actions .map-ref-btn-compact {
@@ -3459,7 +3452,7 @@ body.has-tree-list-pdf .tree-list-pdf-scroll {
 }
 
 
-/* v113: flush map|media under topbar; kill unused gap */
+/* v114: tree-list chrome out; pen on topbar. v113: flush map|media under topbar; kill unused gap */
 #map,
 .map-ref-panel,
 .media-panel {

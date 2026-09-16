@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=113" />
-  <link rel="stylesheet" href="styles.css?v=113" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=114" />
+  <link rel="stylesheet" href="styles.css?v=114" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -44,6 +44,10 @@
             匯入地圖 PDF
             <input id="map-ref-file-input" type="file" accept="*/*" />
           </label>
+          <label class="btn btn-import top-more-row" id="btn-import-list-pdf" role="menuitem" title="匯入列表 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
+            匯入列表 PDF
+            <input id="tree-list-pdf-input" type="file" accept="*/*" multiple />
+          </label>
           <label class="btn btn-import top-more-row" id="btn-pick-media" role="menuitem" title="選擇 PDF（可從檔案／相簿；唔使對應樹木／地圖）">
             媒體資料夾
             <input id="media-file-input" type="file" accept="*/*" multiple />
@@ -67,11 +71,29 @@
       <div class="top-more-wrap" data-top-menu="export">
         <button class="btn btn-top-more" id="btn-top-export" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-export" title="匯出／另存">匯出</button>
         <div class="top-more-panel" id="top-panel-export" role="menu" hidden>
+          <button class="btn top-more-row" id="btn-annot-export-top" type="button" role="menuitem" title="匯出樹木清單 CSV">匯出樹木 CSV</button>
+          <button class="btn top-more-row" id="btn-annot-export-xlsx-top" type="button" role="menuitem" title="匯出樹木清單 Excel（樹種／DBH／H／S／備註／建議）">匯出樹木 Excel</button>
           <button class="btn top-more-row" id="btn-export-project" type="button" role="menuitem" title="匯出專案備份（樹木／圖紙影像／墨跡）">匯出專案</button>
           <button class="btn top-more-row" id="btn-export-xlsx" type="button" role="menuitem" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
           <button class="btn top-more-row" id="btn-save-as" type="button" role="menuitem">另存</button>
           <button class="btn top-more-row" id="btn-fit" type="button" role="menuitem">Fit 地圖</button>
           <button class="btn top-more-row" id="btn-clear" type="button" role="menuitem">清除</button>
+        </div>
+      </div>
+
+      <div class="top-more-wrap" data-top-menu="pen">
+        <button class="btn btn-top-more" id="btn-top-pen" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-pen" title="Apple Pencil／墨跡色與粗幼">筆</button>
+        <div class="top-more-panel" id="top-panel-pen" role="menu" hidden>
+          <div class="map-ink-ctrls" id="map-ink-ctrls" role="group" aria-label="墨跡設定">
+            <label class="map-ink-ctrl" title="墨跡顏色">
+              <span class="map-ink-ctrl-lab">色</span>
+              <input type="color" id="map-ink-color" value="#38bdf8" aria-label="墨跡顏色" />
+            </label>
+            <label class="map-ink-ctrl" title="墨跡粗幼">
+              <span class="map-ink-ctrl-lab">粗</span>
+              <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -249,18 +271,6 @@
         <div class="top-more-wrap map-under-menu" data-top-menu="map-tools">
           <button class="btn btn-top-more map-ref-btn-compact" id="btn-map-under-tools" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-map-tools" title="地圖細項">地圖</button>
           <div class="top-more-panel" id="top-panel-map-tools" role="menu" hidden>
-            <div class="map-tools-section" role="none">
-              <div class="map-ink-ctrls" id="map-ink-ctrls" role="group" aria-label="墨跡設定">
-                <label class="map-ink-ctrl" title="墨跡顏色">
-                  <span class="map-ink-ctrl-lab">色</span>
-                  <input type="color" id="map-ink-color" value="#38bdf8" aria-label="墨跡顏色" />
-                </label>
-                <label class="map-ink-ctrl" title="墨跡粗幼">
-                  <span class="map-ink-ctrl-lab">粗</span>
-                  <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
-                </label>
-              </div>
-            </div>
             <button class="btn top-more-row" type="button" id="btn-annot-mode-bar" role="menuitem" title="加樹模式">加樹</button>
             <div class="annot-id-mode annot-id-mode-inline map-tools-id-mode" role="group" aria-label="編號模式" id="annot-id-mode-bar">
               <button class="btn annot-seg on" type="button" data-id-mode="auto" title="自動編號">自動</button>
@@ -311,17 +321,7 @@
 
   <section class="tree-list-panel" id="tree-list-panel" hidden aria-label="樹木列表">
     <div class="tree-list-resizer" id="tree-list-resizer" title="拖曳調整樹木列表高度"></div>
-    <div class="tree-list-head">
-      <span class="tag tree-list-count-tag" id="tree-list-count" hidden></span>
-      <div class="tree-list-export-actions">
-        <label class="btn btn-import tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
-          匯入 PDF
-          <input id="tree-list-pdf-input" type="file" accept="*/*" multiple />
-        </label>
-        <button class="btn" type="button" id="btn-annot-export-list" title="匯出 CSV">匯出 CSV</button>
-        <button class="btn btn-primary" type="button" id="btn-annot-export-xlsx-list" title="匯出 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
-      </div>
-    </div>
+    <span class="tag tree-list-count-tag" id="tree-list-count" hidden></span>
     <div class="tree-list-body" id="tree-list-body">
       <div class="tree-list" id="tree-list" aria-label="樹木列表"></div>
       <aside class="tree-list-pdf-pane" id="tree-list-pdf-pane" hidden aria-label="列表 PDF">
@@ -330,8 +330,6 @@
           <button class="btn tree-list-pdf-step" type="button" id="tree-list-pdf-prev" title="上一頁" aria-label="上一頁">‹</button>
           <select class="btn tree-list-pdf-page" id="tree-list-pdf-page" aria-label="列表 PDF 頁碼" title="跳頁"></select>
           <button class="btn tree-list-pdf-step" type="button" id="tree-list-pdf-next" title="下一頁" aria-label="下一頁">›</button>
-          <span id="tree-list-pdf-ink-host" class="tree-list-pdf-ink-host" aria-label="墨跡設定（同地圖）"></span>
-          <button class="btn" type="button" id="tree-list-pdf-clear-ink" title="清除本頁墨跡">清墨</button>
           <button class="btn" type="button" id="tree-list-pdf-close" title="關閉 PDF，返樹木列表">關閉 PDF</button>
           <span class="zoom-readout tree-list-pdf-zoom-readout" id="tree-list-pdf-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
         </div>
@@ -407,12 +405,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=113"></script>
-  <script src="vendor/geopackage.min.js?v=113"></script>
-  <script src="vendor/xlsx.full.min.js?v=113"></script>
-  <script src="vendor/pdf.min.js?v=113"></script>
-  <script src="media.js?v=113"></script>
-  <script src="import-extras.js?v=113"></script>
-  <script src="app.js?v=113"></script>
+  <script src="vendor/leaflet.js?v=114"></script>
+  <script src="vendor/geopackage.min.js?v=114"></script>
+  <script src="vendor/xlsx.full.min.js?v=114"></script>
+  <script src="vendor/pdf.min.js?v=114"></script>
+  <script src="media.js?v=114"></script>
+  <script src="import-extras.js?v=114"></script>
+  <script src="app.js?v=114"></script>
 </body>
 </html>
