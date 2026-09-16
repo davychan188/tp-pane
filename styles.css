@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-/* v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
+/* v110: topbar 匯入/隱藏/匯出 menus; larger import hits; accept all files; PDF.js blob worker. v108: hide-trees expands map; multipage map PDF; page selects; broader PDF accept. v107: list PDF uses map ink ctrls. v106: list PDF full height (fix 720px half-height). v105: v104: tree-list in-panel PDF viewer+ink (not media). v103: media finger pinch after enlarge. v102: hide-map + list PDF import + media PDF ink. v101: Pencil short-tap 加樹. v100: media PDF swipe pages. v99: map→list selection sync (app/import). v98: sidebar above map-ref when menu open. v97: hide labels while zooming. v96: GPKG labels ON + hard-cap. v95: attr table pager + denser GPKG label cull. v94: default also map|PDF + full-width bottom (no tall PDF + attrs under map). v93 no portrait stack. v89: always-on tree ID labels on annotate markers. v88: 加樹 short-tap place (JS). v87: remove export/download workflow hints. v86: map crop multi-sheet. v85: lock document pinch-zoom (iOS Safari); map-ref + media PDF keep touch-action:none */
 html, body {
   height: 100%;
   margin: 0;
@@ -82,6 +82,104 @@ body.table-collapsed .table-hint {
 .icon-btn { min-width: 40px; min-height: 40px; padding: 6px 10px; font-size: 18px; }
 #btn-menu { display: none; }
 .top-actions { display: flex; gap: 8px; align-items: center; }
+/* v110: three topbar menus 匯入／隱藏／匯出 → sheet / popover */
+.btn-top-more {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.top-more-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.top-more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  background: rgba(26, 36, 32, 0.35);
+}
+.top-more-backdrop[hidden] { display: none !important; }
+.top-more-panel {
+  position: fixed;
+  z-index: 1260;
+  left: 12px;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.top-more-panel[hidden] { display: none !important; }
+.top-more-section {
+  margin: 6px 4px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.top-more-panel .top-more-row,
+.top-more-panel .open-wrap {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 12px 14px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+.top-more-panel .open-wrap {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+}
+.top-more-panel .open-wrap .btn {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 12px 14px;
+  font-size: 15px;
+  pointer-events: none;
+}
+body.top-more-open { overflow: hidden; }
+@media (min-width: 900px) {
+  .top-more-panel {
+    position: absolute;
+    left: auto;
+    right: 0;
+    top: calc(100% + 8px);
+    bottom: auto;
+    width: min(360px, 92vw);
+    max-height: min(70vh, 560px);
+  }
+  .top-more-wrap[data-top-menu="import"] .top-more-panel {
+    left: 0;
+    right: auto;
+  }
+  .top-more-wrap[data-top-menu="hide"] .top-more-panel {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+  .top-more-wrap[data-top-menu="export"] .top-more-panel {
+    left: auto;
+    right: 0;
+  }
+  .top-more-backdrop {
+    background: transparent;
+  }
+}
 .mobile-only { display: none !important; }
 .backdrop { display: none; }
 .brand {
@@ -178,6 +276,33 @@ body.is-touch .android-file-btn {
   display: block;
 }
 label.btn { display: inline-flex; align-items: center; justify-content: center; }
+/* v110: finger-friendly import controls (topbar + sidebar + tree-list) */
+label.btn.btn-import,
+.open-wrap .btn.btn-import {
+  position: relative;
+  overflow: hidden;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+label.btn.btn-import > input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 40px;
+  cursor: pointer;
+  display: block;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.sidebar label.btn.full.btn-import {
+  min-height: 48px;
+  padding: 12px 14px;
+  font-size: 14px;
+}
 .spacer { flex: 1; }
 .topbar label.inline { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
 select, button, input[type="file"] {
@@ -704,6 +829,19 @@ body.table-collapsed .status { bottom: 12px; }
     padding-right: 7px;
     font-size: 11px;
     min-height: 32px;
+  }
+  /* v110: keep import labels finger-friendly on tablet */
+  .top-actions .btn.btn-import,
+  .top-actions label.btn.btn-import,
+  .top-actions .open-wrap .btn.btn-import {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .top-actions .btn-top-more {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
   }
   .btn, select { min-height: 36px; font-size: 13px; }
   .layer-row { padding: 10px 6px; }
@@ -2624,6 +2762,18 @@ body.has-map-ref .status {
     font-size: 11px;
     min-height: 30px;
   }
+  .top-actions .btn.btn-import,
+  .top-actions label.btn.btn-import,
+  .top-actions .open-wrap .btn.btn-import {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .top-actions .btn-top-more {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
   /* spreadsheet tree-list scrolls inside panel */
 }
 
@@ -3100,6 +3250,12 @@ body.hide-trees #btn-toggle-trees {
   min-height: 28px;
   padding: 3px 8px;
   font-size: 11px;
+}
+.tree-list-export-actions .btn.btn-import,
+.tree-list-export-actions .tree-list-import-pdf-btn {
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 13px;
 }
 .media-pdf-download {
   text-decoration: none;

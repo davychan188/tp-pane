@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
+ * Media panel: PDF page viewer via pdf.js canvas (v110 topbar menus + PDF blob worker + import UX; v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -238,17 +238,75 @@
     return (typeof window !== "undefined" && window.pdfjsLib) ? window.pdfjsLib : null;
   }
 
+  function resolvePdfWorkerSrc() {
+    const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "";
+    let src = "";
+    if (base) {
+      src = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
+    } else {
+      src = "vendor/pdf.worker.min.js?v=110";
+    }
+    try {
+      return new URL(src, location.href).href;
+    } catch (_) {
+      return src;
+    }
+  }
+
+  /** Shared across media + import-extras: fetch worker → Blob URL (Safari + SW friendly). */
+  function ensurePdfWorkerBlob(lib) {
+    if (!lib) return Promise.resolve(null);
+    if (!window.TpPanePdfWorker) {
+      window.TpPanePdfWorker = { promise: null, blobUrl: null, fallback: null };
+    }
+    const slot = window.TpPanePdfWorker;
+    if (slot.blobUrl) {
+      try { lib.GlobalWorkerOptions.workerSrc = slot.blobUrl; } catch (_) {}
+      return Promise.resolve(slot.blobUrl);
+    }
+    if (slot.promise) return slot.promise;
+    const fallback = resolvePdfWorkerSrc();
+    slot.fallback = fallback;
+    try { lib.GlobalWorkerOptions.workerSrc = fallback; } catch (_) {}
+    slot.promise = (async function () {
+      try {
+        const res = await fetch(fallback);
+        if (!res.ok) throw new Error("pdf.worker fetch " + res.status);
+        const buf = await res.arrayBuffer();
+        const blob = new Blob([buf], { type: "application/javascript" });
+        const blobUrl = URL.createObjectURL(blob);
+        slot.blobUrl = blobUrl;
+        lib.GlobalWorkerOptions.workerSrc = blobUrl;
+        return blobUrl;
+      } catch (err) {
+        console.warn("pdf worker blob setup failed; using same-origin URL", err);
+        try { lib.GlobalWorkerOptions.workerSrc = fallback; } catch (_) {}
+        return fallback;
+      }
+    })();
+    return slot.promise;
+  }
+
   function ensurePdfjsConfigured() {
     const lib = getPdfjs();
-    if (!lib || state.pdfjsReady) return lib;
-    try {
-      const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
-      const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-      lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=109";
-      state.pdfjsReady = true;
-    } catch (e) {
-      console.warn("pdf.js worker config failed", e);
+    if (!lib) return null;
+    if (!state.pdfjsReady) {
+      try {
+        const fallback = resolvePdfWorkerSrc();
+        lib.GlobalWorkerOptions.workerSrc = fallback;
+        state.pdfjsReady = true;
+      } catch (e) {
+        console.warn("pdf.js worker config failed", e);
+      }
     }
+    ensurePdfWorkerBlob(lib);
+    return lib;
+  }
+
+  async function ensurePdfjsReady() {
+    const lib = ensurePdfjsConfigured();
+    if (!lib) return null;
+    await ensurePdfWorkerBlob(lib);
     return lib;
   }
 
@@ -280,7 +338,7 @@
   async function getPdfDocument(pdf) {
     if (!pdf) return null;
     if (pdf._pdfDoc) return pdf._pdfDoc;
-    const lib = ensurePdfjsConfigured();
+    const lib = await ensurePdfjsReady();
     if (!lib) return null;
     const key = pdfCacheKey(pdf);
     if (state.pdfDocCache.has(key)) {
@@ -1584,11 +1642,14 @@
     });
 
     if (!nImg && !nPdf) {
-      setStatusHint(
+      const warn =
         "匯入失敗：已選 " + files.length + " 個檔，但沒有相片／PDF" +
         (nSkip ? ("（略過 " + nSkip + "）") : "") +
-        "。請選 JPG／PNG／WEBP／PDF（相簿或檔案 App）"
-      );
+        "。請選 JPG／PNG／WEBP／PDF（相簿或檔案 App）";
+      setStatusHint(warn);
+      if (window.GpkgViewer && typeof window.GpkgViewer.setStatus === "function") {
+        window.GpkgViewer.setStatus(warn, "warn");
+      }
       return;
     }
 
@@ -2206,7 +2267,7 @@
     }
 
     setShowPhotos(false);
-    ensurePdfjsConfigured();
+    ensurePdfjsReady().catch(function () {});
 
     // Keyboard: PDF page navigation
     document.addEventListener("keydown", (e) => {

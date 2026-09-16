@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=109" />
-  <link rel="stylesheet" href="styles.css?v=109" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=110" />
+  <link rel="stylesheet" href="styles.css?v=110" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -29,37 +29,55 @@
     </div>
     <div class="spacer"></div>
     <div class="top-actions">
-      <div class="open-wrap" id="btn-open">
-        <span class="btn btn-primary">開啟 GPKG</span>
-        <input id="file-input" class="open-overlay" type="file" accept="*/*" multiple />
+      <div class="top-more-wrap" data-top-menu="import">
+        <button class="btn btn-primary btn-top-more" id="btn-top-import" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-import" title="匯入檔案">匯入</button>
+        <div class="top-more-panel" id="top-panel-import" role="menu" hidden>
+          <div class="open-wrap top-more-item" id="btn-open" role="none">
+            <span class="btn btn-primary btn-import top-more-row">開啟 GPKG</span>
+            <input id="file-input" class="open-overlay" type="file" accept="*/*" multiple />
+          </div>
+          <label class="btn btn-import top-more-row" id="btn-import-excel" role="menuitem" title="Import Excel / CSV tree list · 匯入樹木清單">
+            匯入 Excel
+            <input id="excel-file-input" type="file" accept="*/*" />
+          </label>
+          <label class="btn btn-import top-more-row" id="btn-import-map-pdf" role="menuitem" title="Import map PDF or image · 匯入地圖 PDF／圖片">
+            匯入地圖 PDF
+            <input id="map-ref-file-input" type="file" accept="*/*" />
+          </label>
+          <label class="btn btn-import top-more-row" id="btn-pick-media" role="menuitem" title="選擇 PDF（可從檔案／相簿；唔使對應樹木／地圖）">
+            媒體資料夾
+            <input id="media-file-input" type="file" accept="*/*" multiple />
+          </label>
+          <label class="btn btn-import top-more-row" id="btn-import-project" role="menuitem" title="匯入專案備份（.tp-pane.json）">
+            匯入專案
+            <input id="project-file-input" type="file" accept="*/*" />
+          </label>
+        </div>
       </div>
-      <label class="btn" id="btn-import-excel" title="Import Excel / CSV tree list · 匯入樹木清單">
-        匯入 Excel
-        <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" hidden />
-      </label>
-      <label class="btn" id="btn-import-map-pdf" title="Import map PDF or image · 匯入地圖 PDF／圖片">
-        匯入地圖 PDF
-        <input id="map-ref-file-input" type="file" accept="*/*" hidden />
-      </label>
-      <label class="btn" id="btn-pick-media" title="選擇 PDF（可從檔案／相簿；唔使對應樹木／地圖）">
-        媒體資料夾
-        <input id="media-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple />
-      </label>
-      <button class="btn" id="btn-fit" type="button">Fit</button>
-      <button class="btn" id="btn-toggle-media" type="button" aria-pressed="false" title="隱藏／顯示樹木 PDF（地圖可擴展）">隱藏媒體</button>
-      <button class="btn" id="btn-toggle-map" type="button" aria-pressed="false" title="隱藏／顯示地圖（樹木 PDF 可擴展）">隱藏地圖</button>
-      <button class="btn" id="btn-toggle-trees" type="button" aria-pressed="false" title="隱藏／顯示樹木列表（地圖可擴展佔滿列表空間）">隱藏列表</button>
-      <button class="btn" id="btn-export-project" type="button" title="匯出專案備份（樹木／圖紙影像／墨跡）">匯出專案</button>
-      <label class="btn" id="btn-import-project" title="匯入專案備份（.tp-pane.json）">
-        匯入專案
-        <input id="project-file-input" type="file" accept=".tp-pane.json,.json,application/json,text/json" hidden />
-      </label>
-      <button class="btn" id="btn-save-as" type="button">另存</button>
-      <button class="btn" id="btn-export-xlsx" type="button" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
-      <button class="btn desktop-only" id="btn-clear" type="button">清除</button>
+
+      <div class="top-more-wrap" data-top-menu="hide">
+        <button class="btn btn-top-more" id="btn-top-hide" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-hide" title="隱藏／顯示面板">隱藏</button>
+        <div class="top-more-panel" id="top-panel-hide" role="menu" hidden>
+          <button class="btn top-more-row" id="btn-toggle-media" type="button" role="menuitem" aria-pressed="false" title="隱藏／顯示樹木 PDF（地圖可擴展）">隱藏媒體</button>
+          <button class="btn top-more-row" id="btn-toggle-map" type="button" role="menuitem" aria-pressed="false" title="隱藏／顯示地圖（樹木 PDF 可擴展）">隱藏地圖</button>
+          <button class="btn top-more-row" id="btn-toggle-trees" type="button" role="menuitem" aria-pressed="false" title="隱藏／顯示樹木列表（地圖可擴展佔滿列表空間）">隱藏列表</button>
+        </div>
+      </div>
+
+      <div class="top-more-wrap" data-top-menu="export">
+        <button class="btn btn-top-more" id="btn-top-export" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-export" title="匯出／另存">匯出</button>
+        <div class="top-more-panel" id="top-panel-export" role="menu" hidden>
+          <button class="btn top-more-row" id="btn-export-project" type="button" role="menuitem" title="匯出專案備份（樹木／圖紙影像／墨跡）">匯出專案</button>
+          <button class="btn top-more-row" id="btn-export-xlsx" type="button" role="menuitem" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
+          <button class="btn top-more-row" id="btn-save-as" type="button" role="menuitem">另存</button>
+          <button class="btn top-more-row" id="btn-fit" type="button" role="menuitem">Fit 地圖</button>
+          <button class="btn top-more-row" id="btn-clear" type="button" role="menuitem">清除</button>
+        </div>
+      </div>
     </div>
   </header>
 
+  <div class="top-more-backdrop" id="top-more-backdrop" hidden></div>
   <div class="backdrop" id="backdrop" hidden></div>
 
   <aside class="sidebar" id="sidebar">
@@ -69,7 +87,7 @@
     </div>
     <div class="dropzone" id="dropzone">
       <strong>開啟 GeoPackage</strong>
-      <div class="hint">電腦：點擊或拖放 .gpkg。電話：用上方「開啟 GPKG」。</div>
+      <div class="hint">電腦：點擊或拖放 .gpkg。電話：用上方「匯入」→「開啟 GPKG」。</div>
       <label class="android-file-btn" id="android-file-btn">
         選擇檔案
         <input id="file-input-phone" type="file" accept="*/*" />
@@ -122,19 +140,19 @@
     <div class="settings-card" id="import-nogpkg-card">
       <div class="card-title">無需 GPKG · Import</div>
       <div class="import-primary-actions">
-      <label class="btn full" style="position:relative;overflow:hidden" title="Import Excel / CSV">
+      <label class="btn full btn-import" style="position:relative;overflow:hidden" title="Import Excel / CSV">
         匯入 Excel／CSV
-        <input id="excel-file-input-side" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
+        <input id="excel-file-input-side" type="file" accept="*/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
-      <label class="btn full" style="position:relative;overflow:hidden;margin-top:6px" title="Import map PDF or image">
+      <label class="btn full btn-import" style="position:relative;overflow:hidden;margin-top:6px" title="Import map PDF or image">
         匯入地圖 PDF／圖片
         <input id="map-ref-file-input-side" type="file" accept="*/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <div class="hint" style="margin-top:6px">可只匯入清單，或只匯入地圖 PDF；兩者互不阻擋，不必開 .gpkg。</div>
       <button class="btn full" type="button" id="btn-export-project-side" title="匯出專案備份" style="margin-top:8px">匯出專案</button>
-      <label class="btn full" style="position:relative;overflow:hidden;margin-top:6px" title="匯入專案備份">
+      <label class="btn full btn-import" style="position:relative;overflow:hidden;margin-top:6px" title="匯入專案備份">
         匯入專案
-        <input id="project-file-input-side" type="file" accept=".tp-pane.json,.json,application/json,text/json" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
+        <input id="project-file-input-side" type="file" accept="*/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       </div>
       <div class="annot-controls" id="annot-controls-side">
@@ -151,9 +169,9 @@
     <div class="settings-card">
       <div class="card-title">媒體 Media</div>
       <p class="hint" style="margin:0">媒體可獨立匯入，唔使對應地圖／清單。可選檔名前綴（如 <b>T1_defect.jpg</b>）方便「只顯示呢棵樹」。</p>
-      <label class="btn full" style="position:relative;overflow:hidden">
+      <label class="btn full btn-import" style="position:relative;overflow:hidden">
         選擇 PDF
-        <input id="media-file-input-side" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.bmp" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
+        <input id="media-file-input-side" type="file" accept="*/*" multiple style="position:absolute;inset:0;opacity:0;cursor:pointer;font-size:40px" />
       </label>
       <button class="btn full" id="btn-media-clear" type="button">清除媒體</button>
       <div class="hint" id="media-status">尚未載入 PDF — 請按「媒體資料夾」選 PDF（可雙指縮放）（右側為 PDF 頁面；清單／地圖互不依賴）</div>
@@ -279,7 +297,7 @@
       <div class="card-title">樹木列表 Tree list <span class="tag" id="tree-list-count"></span></div>
       <div class="hint tree-list-hint">試算表檢視 · 點儲存格編輯 · 自動儲存</div>
       <div class="tree-list-export-actions">
-        <label class="btn tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
+        <label class="btn btn-import tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
           匯入 PDF
           <input id="tree-list-pdf-input" type="file" accept="*/*" multiple />
         </label>
@@ -372,12 +390,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=109"></script>
-  <script src="vendor/geopackage.min.js?v=109"></script>
-  <script src="vendor/xlsx.full.min.js?v=109"></script>
-  <script src="vendor/pdf.min.js?v=109"></script>
-  <script src="media.js?v=109"></script>
-  <script src="import-extras.js?v=109"></script>
-  <script src="app.js?v=109"></script>
+  <script src="vendor/leaflet.js?v=110"></script>
+  <script src="vendor/geopackage.min.js?v=110"></script>
+  <script src="vendor/xlsx.full.min.js?v=110"></script>
+  <script src="vendor/pdf.min.js?v=110"></script>
+  <script src="media.js?v=110"></script>
+  <script src="import-extras.js?v=110"></script>
+  <script src="app.js?v=110"></script>
 </body>
 </html>

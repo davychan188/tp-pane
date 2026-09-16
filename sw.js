@@ -1,4 +1,4 @@
-const CACHE = "tp-pane-v109";
+const CACHE = "tp-pane-v110";
 const ASSETS = [
   "./index.html",
   "./styles.css",
@@ -58,6 +58,11 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+
+  // v110: let PDF.js worker load unintercepted (Safari fake-worker failures)
+  if (url.pathname.indexOf("pdf.worker") >= 0 || req.destination === "worker") {
+    return;
+  }
 
   // Always try the network first for app files so updates actually appear.
   const isAppFile = /\.(html|js|css|json)$/.test(url.pathname) || url.pathname.endsWith("/");

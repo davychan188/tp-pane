@@ -1,5 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
+ * v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
  * v109: project backup/restore (export+import .tp-pane.json package).
  * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
@@ -1455,13 +1456,11 @@
         input.value = "";
         if (!f) return;
         const name = (f.name || "").toLowerCase();
-        if (name && !/\.json$/i.test(name) && !/\.tp-pane\.json$/i.test(name)) {
-          // still allow if MIME is json
-          const t = (f.type || "").toLowerCase();
-          if (t && t.indexOf("json") < 0 && t !== "application/octet-stream" && t !== "") {
-            setImportStatus("請選擇 .tp-pane.json 或 .json 專案檔", "warn");
-            return;
-          }
+        const t = (f.type || "").toLowerCase();
+        const looksJson = /\.json$/i.test(name) || t.indexOf("json") >= 0;
+        if (!looksJson) {
+          setImportStatus("請選擇 .tp-pane.json 或 .json 專案檔（目前：" + (f.name || "未知類型") + "）", "warn");
+          return;
         }
         importProjectPackage(f).catch(function (err) {
           console.error(err);
@@ -1594,19 +1593,67 @@
     objectUrls: []
   };
 
+  function resolveListPdfWorkerSrc() {
+    const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "";
+    let src = base
+      ? String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1")
+      : "vendor/pdf.worker.min.js?v=110";
+    try { return new URL(src, location.href).href; } catch (_) { return src; }
+  }
+
   function ensureListPdfjs() {
     const lib = (typeof window !== "undefined" && window.pdfjsLib) ? window.pdfjsLib : null;
     if (!lib) return null;
     if (!listPdf.pdfjsReady) {
       try {
-        const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
-        const workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
-        lib.GlobalWorkerOptions.workerSrc = workerSrc || "vendor/pdf.worker.min.js?v=109";
+        lib.GlobalWorkerOptions.workerSrc = resolveListPdfWorkerSrc();
         listPdf.pdfjsReady = true;
       } catch (e) {
         console.warn("list pdf.js worker config failed", e);
       }
     }
+    try { ensurePdfWorkerViaShared(lib); } catch (_) {}
+    return lib;
+  }
+
+  function ensurePdfWorkerViaShared(lib) {
+    if (!lib) return Promise.resolve(null);
+    // Prefer media.js helper if already installed on GlobalWorker via prior call
+    if (!window.TpPanePdfWorker) {
+      window.TpPanePdfWorker = { promise: null, blobUrl: null, fallback: null };
+    }
+    const slot = window.TpPanePdfWorker;
+    if (slot.blobUrl) {
+      try { lib.GlobalWorkerOptions.workerSrc = slot.blobUrl; } catch (_) {}
+      return Promise.resolve(slot.blobUrl);
+    }
+    if (slot.promise) return slot.promise;
+    const fallback = resolveListPdfWorkerSrc();
+    slot.fallback = fallback;
+    try { lib.GlobalWorkerOptions.workerSrc = fallback; } catch (_) {}
+    slot.promise = (async function () {
+      try {
+        const res = await fetch(fallback);
+        if (!res.ok) throw new Error("pdf.worker fetch " + res.status);
+        const buf = await res.arrayBuffer();
+        const blob = new Blob([buf], { type: "application/javascript" });
+        const blobUrl = URL.createObjectURL(blob);
+        slot.blobUrl = blobUrl;
+        lib.GlobalWorkerOptions.workerSrc = blobUrl;
+        return blobUrl;
+      } catch (err) {
+        console.warn("pdf worker blob setup failed; using same-origin URL", err);
+        try { lib.GlobalWorkerOptions.workerSrc = fallback; } catch (_) {}
+        return fallback;
+      }
+    })();
+    return slot.promise;
+  }
+
+  async function ensureListPdfjsReady() {
+    const lib = ensureListPdfjs();
+    if (!lib) return null;
+    await ensurePdfWorkerViaShared(lib);
     return lib;
   }
 
@@ -1851,7 +1898,7 @@
 
   async function getListPdfDocument() {
     if (listPdf.doc) return listPdf.doc;
-    const lib = ensureListPdfjs();
+    const lib = await ensureListPdfjsReady();
     if (!lib) return null;
     let data = null;
     if (listPdf.file && typeof listPdf.file.arrayBuffer === "function") {
@@ -3601,10 +3648,17 @@
     if (!lib) return null;
     try {
       if (!lib.GlobalWorkerOptions.workerSrc) {
-        const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "vendor/pdf.min.js";
-        lib.GlobalWorkerOptions.workerSrc = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
+        lib.GlobalWorkerOptions.workerSrc = resolveListPdfWorkerSrc();
       }
     } catch (e) { /* ignore */ }
+    try { ensurePdfWorkerViaShared(lib); } catch (_) {}
+    return lib;
+  }
+
+  async function ensurePdfjsForMapRefReady() {
+    const lib = ensurePdfjsForMapRef();
+    if (!lib) return null;
+    await ensurePdfWorkerViaShared(lib);
     return lib;
   }
 
@@ -3613,9 +3667,9 @@
    * shares the same image content-box coordinate space as PNG/JPG maps.
    */
   function rasterizeMapRefPdf(pdfUrl) {
-    const lib = ensurePdfjsForMapRef();
-    if (!lib) return Promise.resolve(false);
     return (async function () {
+      const lib = await ensurePdfjsForMapRefReady();
+      if (!lib) return false;
       const task = lib.getDocument({ url: pdfUrl });
       const doc = await task.promise;
       try {
@@ -3695,11 +3749,11 @@
    * Soft-cap 60 pages; warn when >40. Crops remain appendable after pages.
    */
   function rasterizeMapRefPdfAllPages(pdfUrl, name) {
-    const lib = ensurePdfjsForMapRef();
-    if (!lib) return Promise.resolve({ ok: false, pageCount: 0 });
     const MAP_PDF_SOFT_CAP = 60;
     const MAP_PDF_WARN_AT = 40;
     return (async function () {
+      const lib = await ensurePdfjsForMapRefReady();
+      if (!lib) return { ok: false, pageCount: 0 };
       const task = lib.getDocument({ url: pdfUrl });
       const doc = await task.promise;
       try {
@@ -5769,11 +5823,33 @@
     initTreeListPdfImport();
     bindProjectBackupUi();
 
+    function isExcelOrCsvFile(file) {
+      if (!file) return false;
+      const name = (file.name || "").toLowerCase();
+      const type = (file.type || "").toLowerCase();
+      if (/\.(xlsx|xls|csv)$/i.test(name)) return true;
+      if (type.indexOf("csv") >= 0) return true;
+      if (type.indexOf("sheet") >= 0 || type.indexOf("excel") >= 0) return true;
+      if (type === "application/vnd.ms-excel") return true;
+      if (type === "text/csv" || type === "text/plain") {
+        // allow plain text only when extension looks like csv (handled above) — skip
+      }
+      return false;
+    }
     function bindExcelInput(el) {
       if (!el) return;
       el.addEventListener("change", () => {
         const f = el.files && el.files[0];
-        if (f) importExcelFile(f).catch((err) => {
+        if (!f) {
+          el.value = "";
+          return;
+        }
+        if (!isExcelOrCsvFile(f)) {
+          setImportStatus("請選擇 Excel／CSV 檔（.xlsx／.xls／.csv；目前：" + (f.name || "未知類型") + "）", "warn");
+          el.value = "";
+          return;
+        }
+        importExcelFile(f).catch((err) => {
           console.error(err);
           setImportStatus("Excel 匯入失敗：" + (err && err.message ? err.message : err), "error");
         });

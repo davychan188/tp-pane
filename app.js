@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
+   v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -3218,8 +3218,74 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=109").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=110").catch(() => {});
   }
+
+  // v110: topbar 匯入／隱藏／匯出 menus
+  (function initTopActionMenus() {
+    const backdrop = $("top-more-backdrop");
+    const wraps = Array.prototype.slice.call(document.querySelectorAll(".top-more-wrap[data-top-menu]"));
+    if (!wraps.length) return;
+
+    function closeAll() {
+      wraps.forEach(function (w) {
+        const btn = w.querySelector(".btn-top-more");
+        const panel = w.querySelector(".top-more-panel");
+        if (btn) btn.setAttribute("aria-expanded", "false");
+        if (panel) panel.hidden = true;
+      });
+      if (backdrop) backdrop.hidden = true;
+      document.body.classList.remove("top-more-open");
+    }
+
+    function openWrap(wrap) {
+      const already = wrap.querySelector(".top-more-panel") && !wrap.querySelector(".top-more-panel").hidden;
+      closeAll();
+      if (already) return;
+      const btn = wrap.querySelector(".btn-top-more");
+      const panel = wrap.querySelector(".top-more-panel");
+      if (btn) btn.setAttribute("aria-expanded", "true");
+      if (panel) panel.hidden = false;
+      if (backdrop) backdrop.hidden = false;
+      document.body.classList.add("top-more-open");
+    }
+
+    wraps.forEach(function (w) {
+      const btn = w.querySelector(".btn-top-more");
+      if (!btn) return;
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openWrap(w);
+      });
+    });
+
+    if (backdrop) {
+      backdrop.addEventListener("click", function () { closeAll(); });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeAll();
+    });
+
+    // Close after choosing a file or tapping a menu action (hide toggles stay usable — close after)
+    wraps.forEach(function (w) {
+      const panel = w.querySelector(".top-more-panel");
+      if (!panel) return;
+      panel.addEventListener("change", function (e) {
+        if (e.target && e.target.type === "file") closeAll();
+      });
+      panel.addEventListener("click", function (e) {
+        const t = e.target;
+        if (!t) return;
+        if (t.closest && t.closest("button.top-more-row")) {
+          // defer close so click handlers run
+          setTimeout(closeAll, 0);
+        }
+      });
+    });
+  })();
+
+
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches ||
     window.navigator.standalone === true;
