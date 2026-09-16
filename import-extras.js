@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v111: portal topbar menus (overflow clip fix). v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
+ * v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (overflow clip fix). v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
  * v109: project backup/restore (export+import .tp-pane.json package).
  * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
@@ -54,11 +54,12 @@
   const LS_LIST_PDF_INK = "tp-pane-list-pdf-ink";
   const LIST_PDF_INK_MAX_STROKES = 240;
   const LIST_PDF_INK_MAX_KEYS = 24;
-  const LIST_PDF_ZOOM_MIN = 1;
+  const LIST_PDF_ZOOM_MIN = 0.35;
   const LIST_PDF_ZOOM_MAX = 12;
   let persistTimer = null;
   let restoring = false;
 
+  const UNDO_MAX = 20;
   const state = {
     trees: [],          // { id, props, feature, hasCoords, x, y, path, annot, leafletMarker }
     drawStrokes: [],    // freehand ink for CURRENT map only: [{ path, color?, width? }]
@@ -85,10 +86,134 @@
     pendingPlace: null, // { x, y, lat, lng, source }
     leafletAnnotLayer: null,
     leafletBound: false,
-    annotLayerRo: null
+    annotLayerRo: null,
+    selectedTreeId: null,
+    undoStack: []       // v112: last place / ink / delete (max UNDO_MAX)
   };
 
   function $(id) { return document.getElementById(id); }
+
+  function cloneTreeSnapshot(t) {
+    if (!t) return null;
+    let feature = null;
+    try { feature = t.feature ? JSON.parse(JSON.stringify(t.feature)) : null; } catch (_) { feature = null; }
+    let path = null;
+    if (Array.isArray(t.path)) {
+      path = t.path.map(function (p) { return { x: Number(p.x), y: Number(p.y) }; });
+    }
+    let props = {};
+    try { props = Object.assign({}, t.props || {}); } catch (_) { props = {}; }
+    return {
+      id: t.id,
+      props: props,
+      feature: feature,
+      hasCoords: !!t.hasCoords,
+      x: t.x != null ? Number(t.x) : null,
+      y: t.y != null ? Number(t.y) : null,
+      path: path,
+      annot: !!t.annot,
+      source: t.source || "annotate"
+    };
+  }
+
+  function pushUndo(entry) {
+    if (!entry || !entry.type) return;
+    state.undoStack = state.undoStack || [];
+    state.undoStack.push(entry);
+    if (state.undoStack.length > UNDO_MAX) {
+      state.undoStack = state.undoStack.slice(-UNDO_MAX);
+    }
+  }
+
+  function restoreTreeFromSnapshot(snap) {
+    if (!snap || !snap.id) return false;
+    if (existingIdSet()[String(snap.id).toUpperCase()]) return false;
+    const props = Object.assign({}, snap.props || {});
+    props["Tree ID"] = snap.id;
+    const feature = snap.feature || {
+      type: "Feature",
+      properties: props,
+      geometry: (snap.hasCoords && props.Longitude != null && props.Latitude != null)
+        ? { type: "Point", coordinates: [Number(props.Longitude), Number(props.Latitude)] }
+        : null
+    };
+    const tree = {
+      id: snap.id,
+      props: props,
+      feature: feature,
+      hasCoords: !!snap.hasCoords,
+      x: snap.x,
+      y: snap.y,
+      path: snap.path,
+      annot: snap.annot !== false,
+      leafletMarker: null,
+      source: snap.source || "annotate"
+    };
+    if (tree.hasCoords && tree.feature && tree.feature.geometry) {
+      tree.leafletMarker = addLeafletAnnotMarker(tree);
+    }
+    state.trees.push(tree);
+    renderTreeList();
+    selectTreeFromList(tree.id);
+    schedulePersist();
+    return true;
+  }
+
+  function undoLastFieldAction() {
+    const stack = state.undoStack || [];
+    if (!stack.length) {
+      setImportStatus("沒有可返回的步驟", "warn");
+      return false;
+    }
+    const entry = stack.pop();
+    if (entry.type === "place") {
+      deleteTree(entry.treeId, { skipUndo: true, silent: true });
+      setImportStatus("已返回：撤銷加樹 " + (entry.treeId || ""), "ok");
+      return true;
+    }
+    if (entry.type === "ink") {
+      state.drawStrokes = state.drawStrokes || [];
+      if (state.drawStrokes.length) {
+        state.drawStrokes.pop();
+        saveCurrentMapInk();
+        schedulePersist();
+        renderAnnotOverlay();
+        setImportStatus("已返回：撤銷墨跡", "ok");
+        return true;
+      }
+      setImportStatus("沒有可撤銷的墨跡", "warn");
+      return false;
+    }
+    if (entry.type === "delete") {
+      if (restoreTreeFromSnapshot(entry.tree)) {
+        setImportStatus("已返回：還原樹木 " + (entry.tree && entry.tree.id ? entry.tree.id : ""), "ok");
+        return true;
+      }
+      setImportStatus("無法還原已刪樹木", "warn");
+      return false;
+    }
+    setImportStatus("無法返回此步驟", "warn");
+    return false;
+  }
+
+  function getSelectedTreeId() {
+    if (state.selectedTreeId) return state.selectedTreeId;
+    if (window.GpkgMedia && window.GpkgMedia.getState) {
+      return window.GpkgMedia.getState().treeId || null;
+    }
+    return null;
+  }
+
+  function confirmDeleteSelectedTree() {
+    const tid = getSelectedTreeId();
+    if (!tid) {
+      setImportStatus("請先選取要刪除的樹木", "warn");
+      return;
+    }
+    const ok = window.confirm("確定刪除樹木「" + tid + "」？");
+    if (!ok) return;
+    deleteTree(tid);
+  }
 
   function escapeHtml(s) {
     return String(s)
@@ -437,9 +562,9 @@
       if (img.complete && img.naturalWidth) onReady();
     }
     if (label) {
-      const base = sheet.sourceName || state.mapRefName || "地圖";
-      label.textContent = "地圖參考 · " + base +
-        (sheet.kind === "crop" || sheet.kind === "page" ? " · " + sheet.label : "");
+      label.hidden = true;
+      label.setAttribute("aria-hidden", "true");
+      label.textContent = "";
     }
     if (openTab && sheet.url) {
       openTab.hidden = false;
@@ -1516,6 +1641,8 @@
       } else {
         try { window.dispatchEvent(new Event("resize")); } catch (_) {}
       }
+      // v112: list PDF fit-page must recompute after panel height / hide toggles
+      if (listPdf && listPdf.url) applyListPdfZoom();
     }
     setTimeout(kickMedia, 80);
     setTimeout(kickMedia, 220);
@@ -1597,7 +1724,7 @@
     const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "";
     let src = base
       ? String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1")
-      : "vendor/pdf.worker.min.js?v=111";
+      : "vendor/pdf.worker.min.js?v=112";
     try { return new URL(src, location.href).href; } catch (_) { return src; }
   }
 
@@ -1671,17 +1798,17 @@
   function parkMapInkCtrlsForListPdf(on) {
     const ctrls = $("map-ink-ctrls");
     const host = $("tree-list-pdf-ink-host");
-    const home = $("map-ref-actions");
+    // v112: ink lives in 地圖 submenu section (fallback: tools panel / map actions)
+    const home = document.querySelector(".map-tools-section") ||
+      $("top-panel-map-tools") ||
+      $("map-ref-actions");
     if (!ctrls) return;
     if (on) {
       if (host && ctrls.parentNode !== host) host.appendChild(ctrls);
       ctrls.classList.add("on-list-pdf");
     } else {
-      // Restore beside map-ref actions (before crop button if present)
       if (home && ctrls.parentNode !== home) {
-        const crop = $("btn-map-crop");
-        if (crop && crop.parentNode === home) home.insertBefore(ctrls, crop);
-        else home.insertBefore(ctrls, home.firstChild);
+        home.insertBefore(ctrls, home.firstChild);
       }
       ctrls.classList.remove("on-list-pdf");
     }
@@ -1833,10 +1960,11 @@
     const readout = $("tree-list-pdf-zoom-level");
     const s = listPdf.zoom || 1;
     if (readout) {
-      readout.textContent = (Math.round(s * 10) / 10) + "×";
-      readout.hidden = s <= 1.01;
+      readout.textContent = (Math.round(s * 100) / 100) + "×";
+      readout.hidden = Math.abs(s - 1) < 0.02;
     }
     const scroll = $("tree-list-pdf-scroll");
+    // Pan only when zoomed past fit-page (content may exceed pane)
     if (scroll) scroll.classList.toggle("is-zoomed", s > 1.01);
   }
 
@@ -1939,11 +2067,18 @@
       const page = await doc.getPage(pageNum);
       if (token !== listPdf.renderToken) return;
       const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
-      const baseW = (scroll && scroll.clientWidth) ? Math.max(120, scroll.clientWidth - 4) : 280;
+      // v112: fit-page (min of fit-width & fit-height) so 全部頁面可見 at zoom=1
+      const pad = 6;
+      const availW = (scroll && scroll.clientWidth) ? Math.max(80, scroll.clientWidth - pad) : 280;
+      const availH = (scroll && scroll.clientHeight) ? Math.max(80, scroll.clientHeight - pad) : 160;
       const rotate = (typeof page.rotate === "number") ? page.rotate : 0;
       const unscaled = page.getViewport({ scale: 1, rotation: rotate });
-      const fitScale = baseW / unscaled.width;
-      const displayScale = fitScale * (listPdf.zoom || 1);
+      const pageW = Math.max(1, unscaled.width);
+      const pageH = Math.max(1, unscaled.height);
+      const fitScale = Math.min(availW / pageW, availH / pageH);
+      listPdf.fitScale = fitScale;
+      const zoomMul = (listPdf.zoom > 0 ? listPdf.zoom : 1);
+      const displayScale = fitScale * zoomMul;
       const viewport = page.getViewport({ scale: displayScale * dpr, rotation: rotate });
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
@@ -1956,6 +2091,16 @@
         stage.style.transformOrigin = "0 0";
         stage.style.width = cssW + "px";
         stage.style.height = cssH + "px";
+        stage.style.minWidth = "0";
+        stage.style.marginLeft = "auto";
+        stage.style.marginRight = "auto";
+      }
+      if (scroll) {
+        // At fit-page (zoom≈1) content fits; reset scroll so full page is in view
+        if (zoomMul <= 1.01) {
+          scroll.scrollLeft = 0;
+          scroll.scrollTop = 0;
+        }
       }
       const ctx = canvas.getContext("2d", { alpha: false });
       if (!ctx) throw new Error("canvas 2d unavailable");
@@ -2081,10 +2226,12 @@
     listPdf.inkStrokes = [];
     setListPdfPaneVisible(true);
     updateListPdfPageLabel();
-    // Double rAF so split layout has width before measuring
+    // Double rAF + delayed reflow so panel height is real before fit-page measure
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        renderListPdfCanvas();
+        renderListPdfCanvas().then(function () {
+          setTimeout(function () { applyListPdfZoom(); }, 120);
+        });
       });
     });
     setImportStatus("已在列表內開啟 PDF（Pencil 可手寫；不會送到媒體面板）", "ok");
@@ -2429,11 +2576,27 @@
     if (clearInk) clearInk.addEventListener("click", clearListPdfInkCurrent);
     if (closeBtn) closeBtn.addEventListener("click", closeListPdf);
 
-    // Reflow list PDF when layout toggles / resize
+    // Reflow list PDF when layout toggles / resize / panel drag
     window.addEventListener("resize", function () {
       if (!listPdf.url) return;
       applyListPdfZoom();
     });
+    const scrollEl = $("tree-list-pdf-scroll");
+    if (scrollEl && typeof ResizeObserver !== "undefined" && !scrollEl._listPdfRo) {
+      scrollEl._listPdfRo = new ResizeObserver(function () {
+        if (!listPdf.url) return;
+        applyListPdfZoom();
+      });
+      try { scrollEl._listPdfRo.observe(scrollEl); } catch (_) {}
+    }
+    const panelEl = $("tree-list-panel");
+    if (panelEl && typeof ResizeObserver !== "undefined" && !panelEl._listPdfRo) {
+      panelEl._listPdfRo = new ResizeObserver(function () {
+        if (!listPdf.url) return;
+        applyListPdfZoom();
+      });
+      try { panelEl._listPdfRo.observe(panelEl); } catch (_) {}
+    }
   }
 
   function renameTreeId(oldId, newId) {
@@ -3359,7 +3522,10 @@
     if (!box) return;
     if (!state.trees.length) {
       box.innerHTML = "";
-      if (countEl) countEl.textContent = "";
+      if (countEl) {
+        countEl.textContent = "";
+        countEl.hidden = true;
+      }
       // Keep panel open if list PDF is showing
       if (document.body.classList.contains("has-tree-list-pdf")) {
         document.body.classList.add("has-tree-list");
@@ -3375,13 +3541,8 @@
     document.body.classList.add("has-tree-list");
     if (panel) panel.hidden = false;
     if (countEl) {
-      const withCoords = state.trees.filter((t) => t.hasCoords).length;
-      const withXy = state.trees.filter((t) => t.x != null && t.y != null).length;
-      let extra = "";
-      if (withCoords) extra = "（" + withCoords + " 有座標）";
-      else if (withXy) extra = "（" + withXy + " 有 x／y）";
-      else extra = "（無座標 — 請用清單選樹）";
-      countEl.textContent = state.trees.length + " 棵" + extra;
+      countEl.hidden = false;
+      countEl.textContent = state.trees.length + " 棵";
     }
     const selected = (window.GpkgMedia && window.GpkgMedia.getState)
       ? window.GpkgMedia.getState().treeId
@@ -3454,6 +3615,7 @@
   function selectTreeFromList(treeId) {
     const t = state.trees.find((x) => String(x.id).toUpperCase() === String(treeId).toUpperCase());
     if (!t) return;
+    state.selectedTreeId = t.id;
     // Highlight in list
     const box = $("tree-list");
     if (box) {
@@ -4095,12 +4257,9 @@
         registerOriginalSheet(sheetUrl, name);
       }
       if (label) {
-        const pages = getMapPageSheets();
-        if (pages.length > 1) {
-          label.textContent = "地圖參考 · " + name + " · 第1頁";
-        } else {
-          label.textContent = "地圖參考 · " + name;
-        }
+        label.hidden = true;
+        label.setAttribute("aria-hidden", "true");
+        label.textContent = "";
       }
       document.body.classList.add("force-map-ref");
       state.mapRefMeta = { name: name, kind: state.mapRefKind };
@@ -4603,6 +4762,7 @@
     }
     state.trees.push(tree);
     if (!state.sourceName) state.sourceName = "annotate";
+    pushUndo({ type: "place", treeId: id });
     renderTreeList();
     selectTreeFromList(id);
     schedulePersist();
@@ -4856,20 +5016,27 @@
     return true;
   }
 
-  function deleteTree(treeId) {
+  function deleteTree(treeId, opts) {
+    opts = opts || {};
     const idx = state.trees.findIndex((t) => String(t.id).toUpperCase() === String(treeId).toUpperCase());
     if (idx < 0) return;
     const t = state.trees[idx];
+    if (!opts.skipUndo) {
+      pushUndo({ type: "delete", tree: cloneTreeSnapshot(t) });
+    }
     if (t.leafletMarker && state.leafletAnnotLayer) {
       try { state.leafletAnnotLayer.removeLayer(t.leafletMarker); } catch (e) { /* ignore */ }
     }
     state.trees.splice(idx, 1);
+    if (state.selectedTreeId && String(state.selectedTreeId).toUpperCase() === String(treeId).toUpperCase()) {
+      state.selectedTreeId = null;
+    }
     renderTreeList();
     if (window.GpkgMedia && window.GpkgMedia.getState && String(window.GpkgMedia.getState().treeId || "").toUpperCase() === String(treeId).toUpperCase()) {
       window.GpkgMedia.setSelectedTree(null, null);
     }
     schedulePersist();
-    setImportStatus("已刪除 " + treeId, "");
+    if (!opts.silent) setImportStatus("已刪除 " + treeId, "");
   }
 
   function treeExportBasename() {
@@ -5446,6 +5613,7 @@
       if (state.drawStrokes.length > 400) {
         state.drawStrokes = state.drawStrokes.slice(-400);
       }
+      pushUndo({ type: "ink" });
       saveCurrentMapInk();
       schedulePersist();
       renderAnnotOverlay();
@@ -5809,6 +5977,25 @@
       });
     }
 
+
+    // v112: map-under 匯出／地圖 menus + 返回／刪除
+    function clickIfPresent(id) {
+      const el = $(id);
+      if (el) el.click();
+    }
+    const mapExportProject = $("btn-map-export-project");
+    if (mapExportProject) mapExportProject.addEventListener("click", function () { clickIfPresent("btn-export-project"); });
+    const mapExportCatalog = $("btn-map-export-catalog");
+    if (mapExportCatalog) mapExportCatalog.addEventListener("click", function () { clickIfPresent("btn-export-xlsx"); });
+    const mapExportSaveAs = $("btn-map-export-save-as");
+    if (mapExportSaveAs) mapExportSaveAs.addEventListener("click", function () { clickIfPresent("btn-save-as"); });
+    const mapDelete = $("btn-map-delete");
+    if (mapDelete) mapDelete.addEventListener("click", confirmDeleteSelectedTree);
+    ["btn-field-undo", "btn-field-undo-map"].forEach(function (id) {
+      const el = $(id);
+      if (el) el.addEventListener("click", function () { undoLastFieldAction(); });
+    });
+
     setIdMode("auto");
     setAnnotateMode(false);
     updateFloatBarVisibility(document.body.classList.contains("has-map-ref"));
@@ -6014,7 +6201,11 @@
     exportTreeListCsv: exportTreeListCsv,
     exportTreeListXlsx: exportTreeListXlsx,
     saveMapCompositePng: saveMapCompositePng,
-    updateTreeXy: updateTreeXy
+    updateTreeXy: updateTreeXy,
+    undoLastFieldAction: undoLastFieldAction,
+    deleteTree: deleteTree,
+    confirmDeleteSelectedTree: confirmDeleteSelectedTree,
+    applyListPdfZoom: applyListPdfZoom
   };
 
   if (document.readyState === "loading") {

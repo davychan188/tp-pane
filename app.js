@@ -1,5 +1,5 @@
 /* tp-pane (offline GeoPackage / tree media viewer)
-   v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
+   v112: denser layout, resizable tree list, map submenu, undo. v111: portal topbar menus (fix iPad overflow clip). v110: topbar 匯入/隱藏/匯出; PDF blob worker; import hits. v109: project backup/restore lives in import-extras. v99: map tap opens catalog / syncs bottom list to selected tree ID. v98: sidebar above map-ref. v97: hide labels while zooming.
    v95: GPKG lag fix — viewport/zoom-gated labels, lazy popups, marker index, paginated attr table.
    Uses locally vendored @ngageoint/geopackage + Leaflet.
    All processing stays in the browser. */
@@ -70,7 +70,7 @@
 
   const $ = (id) => document.getElementById(id);
 
-  // v111: topbar 匯入／隱藏／匯出 — portal panels to body (iPad Safari clips fixed under .topbar/.top-actions overflow)
+  // v112/v111: topbar + map-under 匯入／隱藏／匯出／地圖 — portal panels to body (iPad Safari clips fixed under overflow)
   (function initTopActionMenus() {
     try {
       const backdrop = $("top-more-backdrop");
@@ -3172,6 +3172,63 @@
     grip.addEventListener("pointerdown", onDown);
     grip.addEventListener("touchstart", onDown, { passive: false });
   })();
+
+  // v112: drag-resize tree-list panel height (persist --tree-list-h)
+  (function setupTreeListResize() {
+    const LS = "tp-pane-tree-list-h";
+    const savedH = parseInt(localStorage.getItem(LS) || "", 10);
+    if (savedH >= 72) document.documentElement.style.setProperty("--tree-list-h", savedH + "px");
+    const grip = $("tree-list-resizer");
+    if (!grip) return;
+    let startY = 0, startH = 0, dragging = false;
+    function heightNow() {
+      const panel = $("tree-list-panel");
+      return panel ? panel.getBoundingClientRect().height : 132;
+    }
+    function applyH(h) {
+      const max = Math.max(120, Math.round(window.innerHeight * 0.62));
+      h = Math.max(72, Math.min(max, Math.round(h)));
+      document.documentElement.style.setProperty("--tree-list-h", h + "px");
+      try { localStorage.setItem(LS, String(h)); } catch (_) {}
+      if (map && map.invalidateSize) map.invalidateSize();
+      if (window.GpkgViewer && window.GpkgViewer.invalidateMap) {
+        try { window.GpkgViewer.invalidateMap(); } catch (_) {}
+      }
+      if (window.GpkgImport && typeof window.GpkgImport.applyListPdfZoom === "function") {
+        try { window.GpkgImport.applyListPdfZoom(); } catch (_) {}
+      }
+    }
+    function onMove(ev) {
+      if (!dragging) return;
+      const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
+      applyH(startH + (startY - y));
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function onUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("resizing-tree-list");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    }
+    function onDown(ev) {
+      if (document.body.classList.contains("hide-trees")) return;
+      dragging = true;
+      document.body.classList.add("resizing-tree-list");
+      startY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+      startH = heightNow();
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("touchmove", onMove, { passive: false });
+      window.addEventListener("touchend", onUp);
+      ev.preventDefault();
+    }
+    grip.addEventListener("pointerdown", onDown);
+    grip.addEventListener("touchstart", onDown, { passive: false });
+  })();
+
   if ($("btn-cols") && $("col-menu")) {
     $("btn-cols").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -3356,7 +3413,7 @@
   })();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=111").catch(() => {});
+    navigator.serviceWorker.register("sw.js?v=112").catch(() => {});
   }
 
 

@@ -14,8 +14,8 @@
   <link rel="icon" type="image/svg+xml" href="icons/tp-pane.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="vendor/leaflet.css?v=111" />
-  <link rel="stylesheet" href="styles.css?v=111" />
+  <link rel="stylesheet" href="vendor/leaflet.css?v=112" />
+  <link rel="stylesheet" href="styles.css?v=112" />
 </head>
 <body class="media-layout">
   <header class="topbar">
@@ -24,11 +24,11 @@
       <div class="logo" aria-hidden="true"></div>
       <div>
         tp-pane <span class="ver">樹木盤點</span>
-        <small>樹木圖註 · 地圖｜PDF｜清單 · 檔案只留本機</small>
       </div>
     </div>
     <div class="spacer"></div>
     <div class="top-actions">
+      <button class="btn btn-top-more" id="btn-field-undo" type="button" title="返回上一步（加樹／墨跡／刪除）">返回</button>
       <div class="top-more-wrap" data-top-menu="import">
         <button class="btn btn-primary btn-top-more" id="btn-top-import" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-import" title="匯入檔案">匯入</button>
         <div class="top-more-panel" id="top-panel-import" role="menu" hidden>
@@ -231,40 +231,57 @@
       <div id="map-annotate-pdf-hint" class="map-annotate-pdf-hint" hidden>PDF→影像</div>
     </div>
     <div class="map-ref-controls" id="map-ref-controls">
-      <span id="map-ref-label">地圖參考</span>
-      <div class="map-ref-actions">
-        <div class="map-ink-ctrls" id="map-ink-ctrls" role="group" aria-label="墨跡設定">
-          <label class="map-ink-ctrl" title="墨跡顏色">
-            <span class="map-ink-ctrl-lab">色</span>
-            <input type="color" id="map-ink-color" value="#38bdf8" aria-label="墨跡顏色" />
-          </label>
-          <label class="map-ink-ctrl" title="墨跡粗幼">
-            <span class="map-ink-ctrl-lab">粗</span>
-            <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
-          </label>
+      <span id="map-ref-label" class="map-ref-label-hidden" hidden aria-hidden="true">地圖參考</span>
+      <div class="map-ref-actions map-ref-actions-dense">
+        <button class="btn map-ref-btn-compact" type="button" id="btn-field-undo-map" title="返回上一步（加樹／墨跡／刪除）">返回</button>
+        <div class="top-more-wrap map-under-menu" data-top-menu="map-export">
+          <button class="btn btn-top-more map-ref-btn-compact btn-primary" id="btn-map-under-export" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-map-export" title="匯出／刪除">匯出</button>
+          <div class="top-more-panel" id="top-panel-map-export" role="menu" hidden>
+            <button class="btn top-more-row" id="btn-map-export-project" type="button" role="menuitem" title="匯出專案備份">匯出專案</button>
+            <button class="btn top-more-row" id="btn-map-export-catalog" type="button" role="menuitem" title="匯出 GPKG 屬性目錄為 Excel">匯出目錄 Excel</button>
+            <button class="btn top-more-row" id="btn-annot-export-xlsx-bar" type="button" role="menuitem" title="匯出樹木清單 Excel">匯出樹木 Excel</button>
+            <button class="btn top-more-row" id="btn-annot-export-bar" type="button" role="menuitem" title="匯出樹木清單 CSV">匯出樹木 CSV</button>
+            <button class="btn top-more-row" id="btn-map-save" type="button" role="menuitem" title="將目前地圖視圖與墨跡儲存為 PNG">儲存地圖</button>
+            <button class="btn top-more-row" id="btn-map-export-save-as" type="button" role="menuitem">另存</button>
+            <button class="btn top-more-row top-more-row-danger" id="btn-map-delete" type="button" role="menuitem" title="刪除已選樹木">刪除</button>
+          </div>
         </div>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-map-crop" title="裁切地圖區域成新圖紙">裁切</button>
+        <div class="top-more-wrap map-under-menu" data-top-menu="map-tools">
+          <button class="btn btn-top-more map-ref-btn-compact" id="btn-map-under-tools" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="top-panel-map-tools" title="地圖細項">地圖</button>
+          <div class="top-more-panel" id="top-panel-map-tools" role="menu" hidden>
+            <div class="map-tools-section" role="none">
+              <div class="map-ink-ctrls" id="map-ink-ctrls" role="group" aria-label="墨跡設定">
+                <label class="map-ink-ctrl" title="墨跡顏色">
+                  <span class="map-ink-ctrl-lab">色</span>
+                  <input type="color" id="map-ink-color" value="#38bdf8" aria-label="墨跡顏色" />
+                </label>
+                <label class="map-ink-ctrl" title="墨跡粗幼">
+                  <span class="map-ink-ctrl-lab">粗</span>
+                  <input type="range" id="map-ink-width" min="1" max="8" step="0.25" value="2.25" aria-label="墨跡粗幼" />
+                </label>
+              </div>
+            </div>
+            <button class="btn top-more-row" type="button" id="btn-annot-mode-bar" role="menuitem" title="加樹模式">加樹</button>
+            <div class="annot-id-mode annot-id-mode-inline map-tools-id-mode" role="group" aria-label="編號模式" id="annot-id-mode-bar">
+              <button class="btn annot-seg on" type="button" data-id-mode="auto" title="自動編號">自動</button>
+              <button class="btn annot-seg" type="button" data-id-mode="manual" title="手動編號">手動</button>
+            </div>
+            <button class="btn top-more-row" type="button" id="btn-map-crop" role="menuitem" title="裁切地圖區域成新圖紙">裁切</button>
+            <div class="map-ref-page-nav map-tools-page-nav" id="map-ref-page-nav" hidden>
+              <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-prev" title="上一頁" aria-label="上一頁">‹</button>
+              <select id="map-ref-page-select" class="map-ref-page-select" aria-label="地圖頁碼"></select>
+              <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-next" title="下一頁" aria-label="下一頁">›</button>
+            </div>
+            <a class="btn top-more-row" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前地圖 PDF／圖片" role="menuitem">新分頁</a>
+            <button class="btn top-more-row" type="button" id="btn-map-ref-toggle" role="menuitem" title="切換地圖／PDF">切換</button>
+            <button class="btn top-more-row" type="button" id="btn-map-ref-clear" role="menuitem">清除</button>
+            <span class="zoom-readout map-ref-zoom-readout" id="map-ref-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
+          </div>
+        </div>
         <span class="map-crop-actions" id="map-crop-actions" hidden>
           <button class="btn map-ref-btn-compact" type="button" id="btn-map-crop-cancel" title="取消裁切">取消</button>
           <button class="btn map-ref-btn-compact btn-primary" type="button" id="btn-map-crop-confirm" title="確認裁切並新增圖紙">確定</button>
         </span>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-mode-bar" title="Add-tree mode">加樹</button>
-        <div class="annot-id-mode annot-id-mode-inline" role="group" aria-label="Tree ID mode" id="annot-id-mode-bar">
-          <button class="btn annot-seg on" type="button" data-id-mode="auto" title="Auto ID">自動</button>
-          <button class="btn annot-seg" type="button" data-id-mode="manual" title="Manual ID">手動</button>
-        </div>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-bar" title="匯出樹木清單 CSV">匯出 CSV</button>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-annot-export-xlsx-bar" title="匯出樹木清單 Excel（樹種／DBH／H／S／備註／建議）">匯出 Excel</button>
-        <button class="btn map-ref-btn-compact btn-primary" type="button" id="btn-map-save" title="將目前地圖視圖與墨跡儲存為 PNG">儲存地圖</button>
-        <span class="zoom-readout map-ref-zoom-readout" id="map-ref-zoom-level" title="雙指縮放" aria-live="polite" hidden>1×</span>
-        <a class="btn map-ref-btn-compact" id="map-ref-open-tab" href="#" target="_blank" rel="noopener" hidden title="新分頁開啟目前地圖 PDF／圖片">新分頁</a>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-toggle" title="Toggle map / PDF">切換</button>
-        <button class="btn map-ref-btn-compact" type="button" id="btn-map-ref-clear">清除</button>
-      </div>
-      <div class="map-ref-page-nav" id="map-ref-page-nav" hidden>
-        <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-prev" title="上一頁" aria-label="上一頁">‹</button>
-        <select id="map-ref-page-select" class="map-ref-page-select" aria-label="地圖頁碼"></select>
-        <button class="btn map-ref-btn-compact" type="button" id="map-ref-page-next" title="下一頁" aria-label="下一頁">›</button>
       </div>
       <div class="map-sheet-tabs" id="map-sheet-tabs" hidden role="tablist" aria-label="地圖圖紙"></div>
     </div>
@@ -293,9 +310,9 @@
   <div class="status" id="status">Starting…</div>
 
   <section class="tree-list-panel" id="tree-list-panel" hidden aria-label="樹木列表">
+    <div class="tree-list-resizer" id="tree-list-resizer" title="拖曳調整樹木列表高度"></div>
     <div class="tree-list-head">
-      <div class="card-title">樹木列表 Tree list <span class="tag" id="tree-list-count"></span></div>
-      <div class="hint tree-list-hint">試算表檢視 · 點儲存格編輯 · 自動儲存</div>
+      <span class="tag tree-list-count-tag" id="tree-list-count" hidden></span>
       <div class="tree-list-export-actions">
         <label class="btn btn-import tree-list-import-pdf-btn" id="btn-tree-list-import-pdf" title="匯入 PDF：佔滿樹木列表區，可雙指縮放／Pencil 手寫（唔入媒體）">
           匯入 PDF
@@ -390,12 +407,12 @@
 
   </aside>
 
-  <script src="vendor/leaflet.js?v=111"></script>
-  <script src="vendor/geopackage.min.js?v=111"></script>
-  <script src="vendor/xlsx.full.min.js?v=111"></script>
-  <script src="vendor/pdf.min.js?v=111"></script>
-  <script src="media.js?v=111"></script>
-  <script src="import-extras.js?v=111"></script>
-  <script src="app.js?v=111"></script>
+  <script src="vendor/leaflet.js?v=112"></script>
+  <script src="vendor/geopackage.min.js?v=112"></script>
+  <script src="vendor/xlsx.full.min.js?v=112"></script>
+  <script src="vendor/pdf.min.js?v=112"></script>
+  <script src="media.js?v=112"></script>
+  <script src="import-extras.js?v=112"></script>
+  <script src="app.js?v=112"></script>
 </body>
 </html>

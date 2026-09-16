@@ -1,5 +1,5 @@
 /**
- * Media panel: PDF page viewer via pdf.js canvas (v111 portal topbar menus; v110 topbar menus + PDF blob worker + import UX; v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
+ * Media panel: PDF page viewer via pdf.js canvas (v112 densify; v111 portal topbar menus; v110 topbar menus + PDF blob worker + import UX; v109 cache bump; v104: list PDF moved to import-extras; v103: robust finger pinch after hide-map enlarge; late-start 2-finger; v102: media ink; v101/v100 prior).
  * Independent media library by default (no tree / T1_* required).
  * Optional filter: when a tree is selected, can show only matching prefixes.
  * Works with user-picked local files or bundled demo media.
@@ -244,7 +244,7 @@
     if (base) {
       src = String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1");
     } else {
-      src = "vendor/pdf.worker.min.js?v=111";
+      src = "vendor/pdf.worker.min.js?v=112";
     }
     try {
       return new URL(src, location.href).href;
@@ -1669,7 +1669,7 @@
     if (treeBtn) treeBtn.classList.toggle("on", false);
 
     state.photos.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    let msg = "已載入 " + nImg + " 張相片、" + nPdf + " 個 PDF（僅本機，可唔對應樹木）";
+    let msg = "已載入 " + nImg + " 張相片、" + nPdf + " 個 PDF（可唔對應樹木）";
     if (nSkip) msg += "；略過 " + nSkip + " 個非媒體檔";
     setStatusHint(msg);
     if (window.GpkgViewer && typeof window.GpkgViewer.setStatus === "function") {
@@ -1677,7 +1677,7 @@
     }
     const badge = $("media-source-badge");
     if (badge) {
-      badge.textContent = "本機 " + (nImg + nPdf);
+      badge.textContent = String(nImg + nPdf);
       badge.classList.remove("demo");
       badge.hidden = false;
     }
@@ -1733,7 +1733,7 @@
       badge.classList.add("demo");
       badge.hidden = false;
     }
-    setStatusHint("示範媒體已載入（?demo=1）— 可改為選擇本機相片／PDF 資料夾");
+    setStatusHint("示範媒體已載入（?demo=1）— 可改為選擇相片／PDF");
     state.filterMode = "all";
     const allBtn = $("media-filter-all");
     const treeBtn = $("media-filter-tree");

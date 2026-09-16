@@ -1,4 +1,4 @@
-const CACHE = "tp-pane-v111";
+const CACHE = "tp-pane-v112";
 const ASSETS = [
   "./index.html",
   "./styles.css",
@@ -59,7 +59,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
-  // v111/v110: let PDF.js worker load unintercepted (Safari fake-worker failures)
+  // v112/v111/v110: let PDF.js worker load unintercepted (Safari fake-worker failures)
   if (url.pathname.indexOf("pdf.worker") >= 0 || req.destination === "worker") {
     return;
   }
