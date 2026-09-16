@@ -1,6 +1,6 @@
 /**
  * Excel / CSV tree-list import + map PDF/image reference panel + from-scratch annotate.
- * v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
+ * v111: portal topbar menus (overflow clip fix). v110: topbar 匯入/隱藏/匯出; larger import hits; accept all files; PDF blob worker.
  * v109: project backup/restore (export+import .tp-pane.json package).
  * v108: hide-trees expands map; multipage map PDF sheets; page selects; broader PDF accept.
  * v107: list PDF reuses map ink color/width controls (same DOM). v106: full-height list PDF. v105: fill panel. v104: list PDF pane.
@@ -1597,7 +1597,7 @@
     const base = (document.querySelector('script[src*="pdf.min.js"]') || {}).src || "";
     let src = base
       ? String(base).replace(/pdf\.min\.js(\?.*)?$/i, "pdf.worker.min.js$1")
-      : "vendor/pdf.worker.min.js?v=110";
+      : "vendor/pdf.worker.min.js?v=111";
     try { return new URL(src, location.href).href; } catch (_) { return src; }
   }
 
